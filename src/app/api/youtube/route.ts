@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // YouTube API key - in production, this should be in environment variables
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyCmsFreWdDFd0nAb3cG8lPCSCWrQBgrB_s';
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 
 // Define VideoType interface
 interface VideoType {
@@ -16,6 +16,7 @@ interface VideoType {
   channelUrl: string;
   date: string;
   cacheDomain?: string; // To track which domain the video is from for daily rotation
+  fromFallback?: boolean;
 }
 
 // Cache object to store videos with timestamp
@@ -65,6 +66,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q') || 'artificial intelligence tools';
     const forceRefresh = searchParams.get('refresh') === 'true';
+    const debug = searchParams.get('debug') === 'true';
     
     console.log('Fetching YouTube videos...');
     
@@ -95,9 +97,9 @@ export async function GET(request: Request) {
     // If cache is empty or stale, fallback to hardcoded videos to prevent errors
     const fallbackVideos = getFallbackVideos();
     
-    // API key validation
-    if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'AIzaSyCmsFreWdDFd0nAb3cG8lPCSCWrQBgrB_s') {
-      console.warn('Using sample YouTube data - no valid API key found');
+    // API key validation - modified to handle empty keys better
+    if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.trim() === '') {
+      console.warn('Using sample YouTube data - no API key found');
       
       // Update cache with fallback videos
       videoCache = {
@@ -117,6 +119,7 @@ export async function GET(request: Request) {
     // Prepare to store all video results
     let allVideos: VideoType[] = [];
     let apiSuccess = false;
+    let errorMessage = '';
     
     try {
       // Enhanced query with AI tool keywords for better results
@@ -152,7 +155,28 @@ export async function GET(request: Request) {
         
         allVideos = [...allVideos, ...searchVideos];
       } else {
-        console.warn('YouTube search API failed, status:', searchResponse.status);
+        // Check for quota exceeded error
+        const errorData = await searchResponse.json();
+        if (errorData.error && errorData.error.errors) {
+          const quotaError = errorData.error.errors.find((e: any) => e.reason === 'quotaExceeded');
+          const apiNotConfiguredError = errorData.error.errors.find((e: any) => 
+            e.reason === 'accessNotConfigured' || e.message?.includes('API v3 has not been used in project') || e.message?.includes('is disabled')
+          );
+          
+          if (quotaError) {
+            console.warn('YouTube API quota exceeded - using fallback videos');
+            errorMessage = 'YouTube API quota exceeded';
+          } else if (apiNotConfiguredError) {
+            console.warn('YouTube API not enabled for this project - using fallback videos');
+            errorMessage = 'YouTube API service not enabled';
+          } else {
+            console.warn('YouTube search API failed, status:', searchResponse.status, errorData.error);
+            errorMessage = `API error: ${errorData.error.message || 'Unknown error'}`;
+          }
+        } else {
+          console.warn('YouTube search API failed, status:', searchResponse.status);
+          errorMessage = `API error status: ${searchResponse.status}`;
+        }
       }
       
       // Second approach: Get latest videos from AI-focused channels (more reliable)
@@ -218,6 +242,31 @@ export async function GET(request: Request) {
         allVideos = fallbackVideos;
       }
       
+      // If no items were found or all approaches failed, use fallback videos
+      if (allVideos.length === 0 || !apiSuccess) {
+        const message = errorMessage || "YouTube API returned no results";
+        console.warn(`Using sample YouTube data - ${message}`);
+        
+        // Store fallback videos in cache
+        videoCache = {
+          timestamp: Date.now(),
+          videos: fallbackVideos,
+          domainRotationDate: today
+        };
+        
+        // Return the fallback videos with quota error status
+        return NextResponse.json({
+          videos: fallbackVideos,
+          lastUpdated: new Date().toISOString(),
+          fromFallback: true,
+          notice: errorMessage.includes('quota exceeded') ? 
+            `Using sample data - YouTube API quota exceeded (try again tomorrow)` : 
+            errorMessage.includes('service not enabled') ?
+            `Using sample data - YouTube API needs to be enabled in Google Cloud console` :
+            "Using sample data - YouTube API returned no results"
+        }, { status: 200 });
+      }
+      
       // Remove duplicates (same video ID)
       const uniqueVideos = Array.from(
         new Map(allVideos.map(video => [video.id, video])).values()
@@ -249,6 +298,7 @@ export async function GET(request: Request) {
         domainRotationDate: today
       };
       
+      // Return the results
       return NextResponse.json({
         videos: finalVideos.slice(0, 15), // Return top 15 videos
         lastUpdated: new Date().toISOString()
@@ -349,10 +399,11 @@ function getFallbackVideos(): VideoType[] {
       thumbnailUrl: "https://i.ytimg.com/vi/dKVNz6nvB2s/hqdefault.jpg",
       videoUrl: "https://www.youtube.com/watch?v=dKVNz6nvB2s",
       embedUrl: "https://www.youtube.com/embed/dKVNz6nvB2s",
-      source: "AI Explained",
-      channelId: "UC8wZnXYK_CGKlBcZp-GxYPA",
-      channelUrl: "https://www.youtube.com/channel/UC8wZnXYK_CGKlBcZp-GxYPA",
-      date: formattedDate
+      source: "Matt Wolfe",
+      channelId: "UCJIfeSCssxSC_Dhc5s7woww",
+      channelUrl: "https://www.youtube.com/channel/UCJIfeSCssxSC_Dhc5s7woww",
+      date: formattedDate,
+      fromFallback: true
     },
     {
       id: "jV4EhCnA9bA",
@@ -364,7 +415,8 @@ function getFallbackVideos(): VideoType[] {
       source: "Matt Wolfe",
       channelId: "UCJIfeSCssxSC_Dhc5s7woww",
       channelUrl: "https://www.youtube.com/channel/UCJIfeSCssxSC_Dhc5s7woww",
-      date: formattedDate
+      date: formattedDate,
+      fromFallback: true
     },
     {
       id: "5VG-_P5M9zI",
@@ -376,7 +428,8 @@ function getFallbackVideos(): VideoType[] {
       source: "AI Explained",
       channelId: "UC8wZnXYK_CGKlBcZp-GxYPA",
       channelUrl: "https://www.youtube.com/channel/UC8wZnXYK_CGKlBcZp-GxYPA",
-      date: formattedDate
+      date: formattedDate,
+      fromFallback: true
     },
     {
       id: "LFEE8Mi_BnI",
@@ -388,7 +441,8 @@ function getFallbackVideos(): VideoType[] {
       source: "Prompt Engineering",
       channelId: "UCv83tO5cePwHMt1952IVVHw",
       channelUrl: "https://www.youtube.com/channel/UCv83tO5cePwHMt1952IVVHw",
-      date: formattedDate
+      date: formattedDate,
+      fromFallback: true
     },
     {
       id: "JXqH6U5fxqA",
@@ -400,7 +454,8 @@ function getFallbackVideos(): VideoType[] {
       source: "Ripley AI",
       channelId: "UCgBVkKC1MsaZHVBWdmjJ_Wg",
       channelUrl: "https://www.youtube.com/channel/UCgBVkKC1MsaZHVBWdmjJ_Wg",
-      date: formattedDate
+      date: formattedDate,
+      fromFallback: true
     },
     {
       id: "SOjaGQEOmws",
@@ -412,7 +467,8 @@ function getFallbackVideos(): VideoType[] {
       source: "Builder's Central",
       channelId: "UCdj9K0dcfBVbDlJsQ8Rp2bQ",
       channelUrl: "https://www.youtube.com/channel/UCdj9K0dcfBVbDlJsQ8Rp2bQ",
-      date: formattedDate
+      date: formattedDate,
+      fromFallback: true
     },
     {
       id: "jV4_CULnQnU",
@@ -424,7 +480,8 @@ function getFallbackVideos(): VideoType[] {
       source: "AI Foundations",
       channelId: "UCG-DIzZxEv1hGm7ItSFEooQ",
       channelUrl: "https://www.youtube.com/channel/UCG-DIzZxEv1hGm7ItSFEooQ",
-      date: formattedDate
+      date: formattedDate,
+      fromFallback: true
     },
     {
       id: "DkIIaHOiN1g",
@@ -436,7 +493,8 @@ function getFallbackVideos(): VideoType[] {
       source: "Two Minute Papers",
       channelId: "UCbfYPyITQ-7l4upoX8nvctg",
       channelUrl: "https://www.youtube.com/channel/UCbfYPyITQ-7l4upoX8nvctg",
-      date: formattedDate
+      date: formattedDate,
+      fromFallback: true
     }
   ];
 }

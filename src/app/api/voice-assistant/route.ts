@@ -84,101 +84,64 @@ function preprocessQuery(query: string): string {
  * Try to get a response from Hume API
  */
 async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | null> {
-  if (!HUME_API_KEY || !HUME_CONFIG_ID) return null;
+  const configId = process.env.NEXT_PUBLIC_HUME_CONFIG_ID;
+  const apiKey = process.env.HUME_API_KEY;
+  
+  if (!apiKey) {
+    console.warn("No Hume API key found");
+    return null;
+  }
   
   try {
-    // Pre-process the query for better results
-    const processedQuery = preprocessQuery(query);
-    
-    // Check if it's a tech question
-    const techCheck = isTechQuestion(processedQuery);
-    
-    // If not a tech question, return early with a standard response
-    if (!techCheck) {
-      return {
-        answer: "I'm sorry, I can only answer questions related to technology, AI, and computing. Please ask me about tech topics.",
-        confidence: 0.9,
-        isTechQuestion: false,
-        source: "policy"
-      };
+    // Use the correct chat completions API endpoint
+    const response = await fetch('https://api.hume.ai/v0/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "hume-chat-ai-v2-beta", // Use the correct model name
+        messages: [
+          {
+            role: "system",
+            content: "You are an AI assistant specializing in technology topics, especially AI tools and developments. Keep answers concise (under 4 sentences when possible), accurate, and helpful. For non-tech questions, be friendly but brief. Avoid speculation or making up information. If you don't know, say so clearly."
+          },
+          {
+            role: "user",
+            content: preprocessQuery(query)
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 256
+      })
+    });
+
+    if (!response.ok) {
+      console.error(`Hume API Error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('Hume API Error details:', errorText);
+      return null;
     }
+
+    const data = await response.json();
     
-    // Create a controller to timeout the request if it takes too long
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-    
-    try {
-      // Use the correct Hume API endpoint
-      const response = await fetch('https://api.hume.ai/v0/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hume-Api-Key': HUME_API_KEY
-        },
-        body: JSON.stringify({
-          model: "hume-chat-ai-v2-beta",  // Specify the model explicitly
-          messages: [
-            {
-              "role": "system",
-              "content": SYSTEM_PROMPT
-            },
-            {
-              "role": "user",
-              "content": processedQuery
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 150,
-          stream: false
-        }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        console.error(`Hume API error: ${response.status}`);
-        const errorText = await response.text();
-        console.error(`Error details: ${errorText}`);
-        
-        // If there's a 502 error, fall back to our built-in response
-        if (response.status === 502) {
-          console.warn('Hume API returned 502 error, falling back to built-in responses');
-          return generateFallbackResponse(processedQuery);
-        }
-        
-        throw new Error(`Hume API error: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      // Extract the response from Hume API format
-      const answer = data.choices?.[0]?.message?.content || 
-                     data.message?.content || 
-                     data.text || 
-                     data.choices?.[0]?.text;
-      
-      if (!answer) {
-        console.error('Unexpected Hume API response format:', JSON.stringify(data));
-        throw new Error('Empty or invalid response from Hume');
-      }
-      
-      // Post-process the answer to ensure it's conversational and concise
-      const processedAnswer = postprocessAnswer(answer.trim());
-      
-      return {
-        answer: processedAnswer,
-        confidence: 0.9,
-        isTechQuestion: true,
-        source: "hume"
-      };
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error; // Re-throw for outer catch
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('Unexpected Hume API response format:', data);
+      return null;
     }
+
+    const answer = data.choices[0].message.content || '';
+    
+    return {
+      answer: postprocessAnswer(answer),
+      confidence: 0.95,
+      isTechQuestion: isTechQuestion(query),
+      source: 'Hume AI'
+    };
   } catch (error) {
-    console.error('Error calling Hume API:', error);
-    // Fall back to our built-in response
-    return generateFallbackResponse(query);
+    console.error('Hume API request error:', error);
+    return null;
   }
 }
 
@@ -522,13 +485,12 @@ export async function GET(request: Request) {
   }
 }
 
-// Add a HEAD method handler to fix the 400 error
+// HEAD request handler
 export async function HEAD(request: Request) {
-  // Return a simple 200 response for HEAD requests
   return new Response(null, {
     status: 200,
     headers: {
-      'Content-Type': 'application/json',
-    },
+      'Content-Type': 'application/json'
+    }
   });
 } 

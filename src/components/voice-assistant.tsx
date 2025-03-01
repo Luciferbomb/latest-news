@@ -5,6 +5,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Volume2, X, Send } from 'lucide-react';
 import { useVoiceAssistant, VoiceAssistantMessage, NetworkStatus } from '@/hooks/useVoiceAssistant';
 
+// Define VoiceAssistantProps interface
+interface VoiceAssistantProps {
+  isInitiallyOpen?: boolean;
+  isPermanentlyOpen?: boolean;
+}
+
+// Define AnimationState type
+type AnimationState = 'idle' | 'listening' | 'processing' | 'speaking';
+
+// Function to generate a unique ID
+const generateId = () => `id-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
 // Enhanced wave visualizer component with smoother animations
 const VoiceVisualizer = ({ isActive, mode }: { isActive: boolean; mode: 'listening' | 'speaking' }) => {
   // Different colors for listening vs speaking
@@ -160,23 +172,23 @@ const NetworkStatusIndicator = ({ status }: { status: NetworkStatus }) => {
   );
 };
 
-export default function VoiceAssistant() {
-  const [isOpen, setIsOpen] = useState(false);
+export default function VoiceAssistant({ isInitiallyOpen = false, isPermanentlyOpen = false }: VoiceAssistantProps) {
+  const [isOpen, setIsOpen] = useState(isInitiallyOpen || isPermanentlyOpen);
+  const [isPermanent, setIsPermanent] = useState(isPermanentlyOpen);
   const [textInput, setTextInput] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [lastInteraction, setLastInteraction] = useState<Date>(new Date());
-  const [isPermanent, setIsPermanent] = useState(false);
-  const [animationState, setAnimationState] = useState<
-    'idle' | 'listening' | 'processing' | 'speaking'
-  >('idle');
+  const [animationState, setAnimationState] = useState<AnimationState>('idle');
+  const [lastInteraction, setLastInteraction] = useState(new Date());
+  const [messages, setMessages] = useState<VoiceAssistantMessage[]>([]);
   
-  // Using our enhanced voice assistant hook
+  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Initialize the voice assistant hook
   const {
     isListening,
     isProcessing,
     isSpeaking,
-    messages,
+    messages: assistantMessages,
     error,
     networkStatus,
     startListening,
@@ -185,7 +197,8 @@ export default function VoiceAssistant() {
     cancelRequest,
     stopSpeaking,
     clearMessages,
-    newSession
+    newSession,
+    processQuery
   } = useVoiceAssistant({
     onProcessingStart: () => {
       setAnimationState('processing');
@@ -213,7 +226,7 @@ export default function VoiceAssistant() {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages]);
+  }, [assistantMessages]);
 
   // Focus input when opened
   useEffect(() => {
@@ -277,8 +290,23 @@ export default function VoiceAssistant() {
   // Handle text input submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (textInput.trim()) {
-      submitQuery(textInput.trim());
+    if (textInput.trim() && submitQuery) {
+      try {
+        submitQuery(textInput.trim());
+      } catch (error) {
+        console.error("Error submitting query:", error);
+        // Create an error message directly instead of using addMessage
+        setMessages(prev => [
+          ...prev,
+          {
+            id: generateId(),
+            text: "There was an error processing your query. Please try again.",
+            isUser: false,
+            timestamp: new Date(),
+            type: "error"
+          }
+        ]);
+      }
       setTextInput('');
     }
     setLastInteraction(new Date());
@@ -399,14 +427,14 @@ export default function VoiceAssistant() {
                   ) : null}
                 </AnimatePresence>
                 
-                {messages.length === 0 ? (
+                {assistantMessages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 p-4">
                     <p className="mb-2">How can I help you with technology today?</p>
                     <p className="text-sm">Try saying "What's new in AI?" or "Tell me about the latest smartphones"</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {messages.map((message) => (
+                    {assistantMessages.map((message) => (
                       <MessageBubble key={message.id} message={message} />
                     ))}
                     <div ref={messagesEndRef} />

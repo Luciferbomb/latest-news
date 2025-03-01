@@ -14,6 +14,7 @@ export interface VideoItem {
   source: string;
   date: string;
   channelUrl?: string;
+  fromFallback?: boolean;
 }
 
 interface VideoCarouselProps {
@@ -77,16 +78,70 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
 
   // Get optimized embed URL
   const getEmbedUrl = (embedUrl: string, isPlaying: boolean): string => {
-    // Make sure we're using the correct YouTube embed URL format
-    let url = embedUrl;
-    
-    // Clean up the URL to remove any existing parameters
-    if (url.includes('?')) {
-      url = url.split('?')[0];
+    if (!embedUrl || typeof embedUrl !== 'string') {
+      console.warn('Invalid embed URL:', embedUrl);
+      return '';
     }
     
-    // Add parameters that improve iframe reliability
-    return `${url}?autoplay=${isPlaying ? '1' : '0'}&mute=${isPlaying ? '0' : '1'}&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&widgetid=1&rel=0`;
+    try {
+      // Make sure we're using the correct YouTube embed URL format
+      let url = embedUrl;
+      
+      // Clean up the URL to remove any existing parameters
+      if (url.includes('?')) {
+        url = url.split('?')[0];
+      }
+      
+      // Extract video ID to use proper embed URL
+      let videoId = "";
+      
+      // Handle different YouTube URL formats
+      if (url.includes('/embed/')) {
+        videoId = url.split('/embed/').pop() || "";
+      } else if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/').pop() || "";
+      } else if (url.includes('youtube.com/watch')) {
+        try {
+          const urlObj = new URL(url);
+          videoId = urlObj.searchParams.get('v') || "";
+        } catch (e) {
+          // Handle case where URL might be malformed
+          const match = url.match(/[?&]v=([^&]+)/);
+          videoId = match ? match[1] : "";
+        }
+      } else {
+        // Fallback extraction - assume the last part of the path is the ID
+        const parts = url.split('/');
+        videoId = parts[parts.length - 1] || "";
+      }
+      
+      // Remove any extra path segments after the ID
+      if (videoId.includes('/')) {
+        videoId = videoId.split('/')[0];
+      }
+      
+      // If no video ID could be extracted, return empty string
+      if (!videoId) {
+        return '';
+      }
+      
+      // Build the final embed URL with necessary parameters
+      const params = new URLSearchParams({
+        autoplay: isPlaying ? '1' : '0',
+        mute: isPlaying ? '1' : '0',
+        enablejsapi: '1',
+        modestbranding: '1',
+        rel: '0',
+        showinfo: '0',
+        fs: '1',
+        origin: typeof window !== 'undefined' ? window.location.origin : '',
+      }).toString();
+      
+      return `https://www.youtube.com/embed/${videoId}?${params}`;
+    } catch (error) {
+      console.error('Error generating embed URL:', error);
+      return '';
+    }
   };
 
   // Auto-advance carousel every 10 seconds if not playing video
@@ -135,10 +190,13 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
               ref={iframeRef}
               src={getEmbedUrl(currentVideo.embedUrl, isPlaying)}
               className="w-full h-full object-cover"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
               onLoad={handleIframeLoad}
               onError={handleIframeError}
+              title={currentVideo.title}
+              sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
+              loading="lazy"
             />
           </>
         ) : currentVideo.videoUrl && currentVideo.videoUrl.endsWith('.mp4') ? (
@@ -154,11 +212,16 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
           />
         ) : (
           // Fallback to just showing the thumbnail if no valid video source or there was an error
-          <div className="relative w-full h-full">
+          <div className="relative w-full h-full bg-black">
             <img 
               src={currentVideo.thumbnailUrl} 
               alt={currentVideo.title}
               className="w-full h-full object-cover"
+              loading="lazy"
+              onError={(e) => {
+                console.error("Image loading error");
+                (e.target as HTMLImageElement).src = "https://placehold.co/600x400/000000/FFFFFF?text=Video+Unavailable";
+              }}
             />
             <div className="absolute inset-0 flex items-center justify-center">
               <a 
@@ -170,9 +233,13 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
                 <ExternalLink className="h-8 w-8 text-white" />
               </a>
             </div>
-            {iframeError && (
+            {iframeError ? (
               <div className="absolute bottom-0 left-0 right-0 bg-red-700/80 text-white text-center text-sm py-1">
-                Could not load embedded video. Click to view on YouTube.
+                {currentVideo.fromFallback ? "Using sample video data. YouTube API needs configuration." : "Could not load embedded video. Click to view on YouTube."}
+              </div>
+            ) : (
+              <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-center text-sm py-1">
+                Click to view video on YouTube
               </div>
             )}
           </div>

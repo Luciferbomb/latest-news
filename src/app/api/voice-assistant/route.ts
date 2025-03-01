@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // API keys - in production, these should be in environment variables
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-56e85276385f464c9e229ebdc0702649';
 
 // Define a type for the voice assistant request
 interface VoiceAssistantRequest {
@@ -17,7 +17,7 @@ interface VoiceAssistantResponse {
   source?: string;
 }
 
-// System prompt for OpenAI to ensure it responds only to tech questions
+// System prompt for DeepSeek to ensure it responds only to tech questions
 const SYSTEM_PROMPT = `You are a helpful AI assistant specialized in technology topics.
 You should ONLY answer questions related to technology, AI, programming, computers, 
 electronics, software, hardware, and related technical fields.
@@ -57,10 +57,10 @@ function isTechQuestion(query: string): boolean {
 }
 
 /**
- * Try to get a response from OpenAI
+ * Try to get a response from DeepSeek API
  */
-async function getOpenAIResponse(query: string): Promise<VoiceAssistantResponse | null> {
-  if (!OPENAI_API_KEY) return null;
+async function getDeepSeekResponse(query: string): Promise<VoiceAssistantResponse | null> {
+  if (!DEEPSEEK_API_KEY) return null;
   
   try {
     const techCheck = isTechQuestion(query);
@@ -75,14 +75,14 @@ async function getOpenAIResponse(query: string): Promise<VoiceAssistantResponse 
       };
     }
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'deepseek-chat',
         messages: [
           {
             "role": "system",
@@ -99,25 +99,28 @@ async function getOpenAIResponse(query: string): Promise<VoiceAssistantResponse 
     });
     
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error(`DeepSeek API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`Error details: ${errorText}`);
+      throw new Error(`DeepSeek API error: ${response.status}`);
     }
     
     const data = await response.json();
     const answer = data.choices?.[0]?.message?.content?.trim();
     
     if (!answer) {
-      throw new Error('Empty response from OpenAI');
+      throw new Error('Empty response from DeepSeek');
     }
     
     return {
       answer,
       confidence: 0.9,
       isTechQuestion: true,
-      source: "openai"
+      source: "deepseek"
     };
     
   } catch (error) {
-    console.error('Error calling OpenAI:', error);
+    console.error('Error calling DeepSeek:', error);
     return null;
   }
 }
@@ -179,6 +182,9 @@ function generateFallbackResponse(query: string): VoiceAssistantResponse {
   };
 }
 
+// Track requests to prevent duplicates
+const pendingQueries = new Map<string, Promise<VoiceAssistantResponse>>();
+
 export async function POST(request: Request) {
   try {
     // Parse the request body
@@ -191,22 +197,46 @@ export async function POST(request: Request) {
       );
     }
     
+    // Create a unique key for this query
+    const queryKey = `${body.sessionId || 'default'}-${body.query}`;
+    
+    // Check if we're already processing this exact query
+    if (pendingQueries.has(queryKey)) {
+      console.log(`Duplicate query detected: ${body.query}`);
+      const response = await pendingQueries.get(queryKey);
+      return NextResponse.json(response, { status: 200 });
+    }
+    
     // Log the query (for debugging)
     console.log(`Voice assistant query: ${body.query}`);
     
-    // Try to get a response from OpenAI first
-    const openAIResponse = await getOpenAIResponse(body.query);
+    // Create a promise for the query processing
+    const responsePromise = (async () => {
+      // Try to get a response from DeepSeek first
+      const deepSeekResponse = await getDeepSeekResponse(body.query);
+      
+      // If we got a valid response from DeepSeek, use that
+      if (deepSeekResponse) {
+        return deepSeekResponse;
+      }
+      
+      // Otherwise, fall back to our built-in response generator
+      return generateFallbackResponse(body.query);
+    })();
     
-    // If we got a valid response from OpenAI, use that
-    if (openAIResponse) {
-      return NextResponse.json(openAIResponse, { status: 200 });
-    }
+    // Store the promise in our map
+    pendingQueries.set(queryKey, responsePromise);
     
-    // Otherwise, fall back to our built-in response generator
-    const fallbackResponse = generateFallbackResponse(body.query);
+    // Wait for the response
+    const response = await responsePromise;
+    
+    // Clean up after a short delay (to catch rapid duplicate requests)
+    setTimeout(() => {
+      pendingQueries.delete(queryKey);
+    }, 5000);
     
     // Return the response
-    return NextResponse.json(fallbackResponse, { status: 200 });
+    return NextResponse.json(response, { status: 200 });
     
   } catch (error: any) {
     console.error('Error processing voice assistant query:', error);
@@ -234,19 +264,43 @@ export async function GET(request: Request) {
       );
     }
     
-    // Try to get a response from OpenAI first
-    const openAIResponse = await getOpenAIResponse(query);
+    // Create a unique key for this query
+    const queryKey = `get-${query}`;
     
-    // If we got a valid response from OpenAI, use that
-    if (openAIResponse) {
-      return NextResponse.json(openAIResponse, { status: 200 });
+    // Check if we're already processing this exact query
+    if (pendingQueries.has(queryKey)) {
+      console.log(`Duplicate GET query detected: ${query}`);
+      const response = await pendingQueries.get(queryKey);
+      return NextResponse.json(response, { status: 200 });
     }
     
-    // Otherwise, fall back to our built-in response generator
-    const fallbackResponse = generateFallbackResponse(query);
+    // Create a promise for the query processing
+    const responsePromise = (async () => {
+      // Try to get a response from DeepSeek first
+      const deepSeekResponse = await getDeepSeekResponse(query);
+      
+      // If we got a valid response from DeepSeek, use that
+      if (deepSeekResponse) {
+        return deepSeekResponse;
+      }
+      
+      // Otherwise, fall back to our built-in response generator
+      return generateFallbackResponse(query);
+    })();
+    
+    // Store the promise in our map
+    pendingQueries.set(queryKey, responsePromise);
+    
+    // Wait for the response
+    const response = await responsePromise;
+    
+    // Clean up after a short delay
+    setTimeout(() => {
+      pendingQueries.delete(queryKey);
+    }, 5000);
     
     // Return the response
-    return NextResponse.json(fallbackResponse, { status: 200 });
+    return NextResponse.json(response, { status: 200 });
     
   } catch (error: any) {
     console.error('Error processing voice assistant query:', error);

@@ -21,6 +21,7 @@ export default function useVoiceAssistant({
 }: UseVoiceAssistantProps = {}) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [finalTranscript, setFinalTranscript] = useState('');
   const [response, setResponse] = useState<VoiceAssistantResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -29,6 +30,9 @@ export default function useVoiceAssistant({
   // References to hold instances
   const recognitionRef = useRef<any>(null);
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastQueryRef = useRef<string>('');
+  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Initialize speech recognition on component mount
   useEffect(() => {
@@ -49,6 +53,7 @@ export default function useVoiceAssistant({
     recognitionRef.current.onstart = () => {
       setIsListening(true);
       setTranscript('');
+      setFinalTranscript('');
       onListening?.(true);
     };
     
@@ -72,9 +77,9 @@ export default function useVoiceAssistant({
       setIsListening(false);
       onListening?.(false);
       
-      // If we have a transcript, process it
+      // If we have a transcript, finalize it and process it
       if (transcript.trim()) {
-        processTranscript(transcript);
+        setFinalTranscript(transcript);
       }
     };
     
@@ -96,19 +101,50 @@ export default function useVoiceAssistant({
         recognitionRef.current.abort();
       }
       window.speechSynthesis.cancel();
+
+      if (processingTimerRef.current) {
+        clearTimeout(processingTimerRef.current);
+      }
+
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
     };
   }, []);
   
-  // Effect to handle changes to the transcript
+  // Effect to handle changes to the finalized transcript
   useEffect(() => {
-    if (transcript && !isListening && !isProcessing) {
-      processTranscript(transcript);
+    if (finalTranscript && !isListening && !isProcessing) {
+      // Prevent processing the same query twice in a row
+      if (finalTranscript === lastQueryRef.current) {
+        console.log("Skipping duplicate query:", finalTranscript);
+        return;
+      }
+      
+      // Set a processing timeout to avoid indefinite processing
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
+      
+      processingTimeoutRef.current = setTimeout(() => {
+        if (isProcessing) {
+          console.warn("Processing timeout reached. Resetting state.");
+          setIsProcessing(false);
+        }
+      }, 10000); // 10 second timeout
+      
+      // Update last query and process the new one
+      lastQueryRef.current = finalTranscript;
+      processTranscript(finalTranscript);
     }
-  }, [transcript, isListening, isProcessing]);
+  }, [finalTranscript, isListening, isProcessing]);
   
   // Process the transcript and get a response
   const processTranscript = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
+    
+    // Set a unique session ID for this request
+    const sessionId = `session-${Date.now()}`;
     
     setIsProcessing(true);
     
@@ -118,7 +154,10 @@ export default function useVoiceAssistant({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: text.trim() }),
+        body: JSON.stringify({ 
+          query: text.trim(),
+          sessionId
+        }),
       });
       
       if (!response.ok) {
@@ -138,15 +177,27 @@ export default function useVoiceAssistant({
       onError?.(errorMessage);
     } finally {
       setIsProcessing(false);
+      
+      // Clear any timeout
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+        processingTimeoutRef.current = null;
+      }
     }
-  }, [isProcessing, onResponse, onError]);
+  }, [onResponse, onError]);
   
   // Start listening
   const startListening = useCallback(() => {
     if (recognitionRef.current && !isListening) {
       try {
-        recognitionRef.current.start();
+        // Cancel any existing speech
+        window.speechSynthesis.cancel();
+        
+        // Clear previous errors
         setError(null);
+        
+        // Start recognition
+        recognitionRef.current.start();
       } catch (err: any) {
         setError(`Failed to start listening: ${err.message}`);
         onError?.(`Failed to start listening: ${err.message}`);

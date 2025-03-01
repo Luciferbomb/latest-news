@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useVoiceAssistant from '@/hooks/useVoiceAssistant';
-import { Mic, MicOff, X, Volume2, Loader2 } from 'lucide-react';
+import { Mic, MicOff, X, Volume2, Loader2, AlertCircle } from 'lucide-react';
 
 interface VoiceAssistantProps {
   isOpen: boolean;
@@ -12,8 +12,10 @@ interface VoiceAssistantProps {
 
 export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps) {
   const [isMinimized, setIsMinimized] = useState(false);
-  const [messages, setMessages] = useState<{type: 'user' | 'assistant', text: string}[]>([]);
+  const [messages, setMessages] = useState<{type: 'user' | 'assistant' | 'system', text: string}[]>([]);
+  const [hasInteracted, setHasInteracted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeQueryRef = useRef<string | null>(null);
   
   const {
     isListening,
@@ -26,17 +28,25 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
     stopListening
   } = useVoiceAssistant({
     onResult: (result) => {
-      // Update the transcript as the user speaks
+      // Just using this to track the transcript as the user speaks
     },
     onResponse: (response) => {
       // Add the assistant's response to the messages
-      setMessages(prev => [
-        ...prev,
-        { type: 'assistant', text: response.answer }
-      ]);
+      if (activeQueryRef.current) {
+        setMessages(prev => [
+          ...prev,
+          { type: 'assistant', text: response.answer }
+        ]);
+        activeQueryRef.current = null;
+      }
     },
     onError: (error) => {
       console.error('Voice assistant error:', error);
+      // Show error message to user
+      setMessages(prev => [
+        ...prev,
+        { type: 'system', text: `Error: ${error}. Please try again.` }
+      ]);
     }
   });
   
@@ -47,11 +57,18 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
   
   // Add user message when transcript is finalized
   useEffect(() => {
-    if (!isListening && transcript && !isProcessing) {
+    if (!isListening && transcript && !isProcessing && !activeQueryRef.current) {
+      // Set the active query
+      activeQueryRef.current = transcript;
+      
+      // Add user message
       setMessages(prev => [
         ...prev,
         { type: 'user', text: transcript }
       ]);
+      
+      // Mark that user has interacted
+      setHasInteracted(true);
     }
   }, [isListening, transcript, isProcessing]);
   
@@ -61,9 +78,28 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
       setTimeout(() => {
         setMessages([]);
         setIsMinimized(false);
+        setHasInteracted(false);
+        activeQueryRef.current = null;
       }, 300);
     }
   }, [isOpen]);
+  
+  // If there's an error, show a message after a delay
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setMessages(prev => {
+          // Only add the error message if it's not already there
+          if (!prev.some(m => m.type === 'system' && m.text.includes(error))) {
+            return [...prev, { type: 'system', text: `Error: ${error}. Please try again.` }];
+          }
+          return prev;
+        });
+      }, 1000); // Show error after 1 second delay
+      
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
   
   // Define animations for the voice visualizer
   const visualizerVariants = {
@@ -110,6 +146,12 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
     return bars;
   };
   
+  // Function to handle manual clearing of messages
+  const clearMessages = () => {
+    setMessages([]);
+    setHasInteracted(false);
+  };
+  
   if (!isOpen) return null;
   
   return (
@@ -152,6 +194,15 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                   <h3 className="ml-3 text-white font-semibold">Tech Voice Assistant</h3>
                 </div>
                 <div className="flex gap-2">
+                  {hasInteracted && (
+                    <button 
+                      onClick={clearMessages}
+                      className="text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-700 transition-colors"
+                      title="Clear conversation"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    </button>
+                  )}
                   <button 
                     onClick={() => setIsMinimized(true)}
                     className="text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-700 transition-colors"
@@ -184,19 +235,40 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                     {messages.map((message, index) => (
                       <div 
                         key={index} 
-                        className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                        className={`flex ${
+                          message.type === 'user' 
+                            ? 'justify-end' 
+                            : message.type === 'system' 
+                            ? 'justify-center' 
+                            : 'justify-start'
+                        }`}
                       >
                         <div 
                           className={`rounded-lg px-4 py-2 max-w-[80%] ${
                             message.type === 'user'
                               ? 'bg-purple-600 text-white'
+                              : message.type === 'system'
+                              ? 'bg-yellow-600 text-white flex items-center'
                               : 'bg-neutral-700 text-white'
                           }`}
                         >
+                          {message.type === 'system' && (
+                            <AlertCircle size={16} className="mr-2 flex-shrink-0" />
+                          )}
                           {message.text}
                         </div>
                       </div>
                     ))}
+                    {/* Show typing indicator when processing */}
+                    {isProcessing && (
+                      <div className="flex justify-start">
+                        <div className="bg-neutral-700 rounded-lg px-4 py-2 flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></div>
+                          <div className="w-2 h-2 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></div>
+                        </div>
+                      </div>
+                    )}
                     <div ref={messagesEndRef} />
                   </div>
                 )}
@@ -215,12 +287,15 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                   </div>
                   
                   <div className="flex gap-2">
-                    {error && <p className="text-red-400 text-sm">{error}</p>}
+                    {error && <p className="text-red-400 text-sm max-w-[200px] truncate">{error}</p>}
                     <button
                       onClick={isListening ? stopListening : startListening}
+                      disabled={isProcessing}
                       className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                         isListening
                           ? 'bg-red-500 hover:bg-red-600'
+                          : isProcessing
+                          ? 'bg-gray-500 cursor-not-allowed'
                           : 'bg-cyan-500 hover:bg-cyan-600'
                       }`}
                     >

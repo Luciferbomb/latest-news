@@ -29,7 +29,7 @@ interface SourceStatus {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const query = searchParams.get('q') || 'artificial intelligence';
+    const query = searchParams.get('q') || 'AI tools OR AI agents OR artificial intelligence technology';
     
     console.log(`Fetching news with query: ${query}`);
     
@@ -91,9 +91,9 @@ export async function GET(request: Request) {
       } else {
         throw new Error('All NewsAPI requests failed');
       }
-      } catch (apiError) {
-        console.error('Error fetching from real APIs:', apiError);
-      }
+    } catch (apiError) {
+      console.error('Error fetching from real APIs:', apiError);
+    }
     
     // If we couldn't get data from real APIs or there was an error, return empty array
     if (newsData.length === 0) {
@@ -156,6 +156,19 @@ function getRandomSentiment() {
   return sentiments[Math.floor(Math.random() * sentiments.length)];
 }
 
+// Helper function to format dates
+function formatDate(date: Date): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+// Helper function to subtract days from current date
+function subtractDays(days: number): Date {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date;
+}
+
 // Helper function to remove duplicate news items
 function removeDuplicates(newsItems: NewsItem[]): NewsItem[] {
   const uniqueMap = new Map();
@@ -179,91 +192,91 @@ function getMockNewsData() {
   return [
     {
       id: 'mock-1',
-      title: 'OpenAI Releases GPT-5 with Revolutionary Reasoning Capabilities',
-      description: 'OpenAI has announced GPT-5, featuring unprecedented reasoning abilities and multimodal understanding. The new model can solve complex problems across mathematics, coding, and scientific domains with human-level accuracy.',
+      title: 'Claude 3.5 Sonnet: Anthropic\'s New AI Model Outperforms GPT-4 on Reasoning Benchmarks',
+      description: 'Anthropic has released Claude 3.5 Sonnet, their latest AI model that demonstrates superior performance on reasoning tasks compared to OpenAI\'s GPT-4. The model features enhanced contextual understanding, better instruction following, and reduced hallucination rates.',
       imageUrl: 'https://images.unsplash.com/photo-1677442135136-760c813a1e2a?q=80&w=1932&auto=format&fit=crop',
-      date: 'Feb 28, 2025',
+      date: formatDate(subtractDays(1)),
       readTime: '4 min read',
-      url: 'https://example.com/openai-gpt5',
-      source: 'Tech Chronicle',
-      categories: ['ai-tools', 'machine-learning', 'nlp']
+      url: 'https://example.com/claude-3.5-sonnet',
+      source: 'Anthropic',
+      categories: ['ai-tools', 'large-language-models', 'nlp']
     },
     {
       id: 'mock-2',
-      title: 'Google DeepMind Achieves Breakthrough in Protein Folding Prediction',
-      description: 'Google DeepMind researchers have developed a new AI system that can predict protein structures with near-perfect accuracy, potentially revolutionizing drug discovery and our understanding of biological processes.',
-      imageUrl: 'https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?q=80&w=1770&auto=format&fit=crop',
-      date: 'Feb 25, 2025',
+      title: 'Perplexity Launches AI Search Pro with Real-Time Data and Custom Knowledge Integration',
+      description: 'Perplexity has expanded its AI search capabilities with a new Pro tier that offers real-time data access, integration with custom knowledge bases, and enhanced citation accuracy. The tool aims to revolutionize information discovery for both casual users and professionals.',
+      imageUrl: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?q=80&w=1770&auto=format&fit=crop',
+      date: formatDate(subtractDays(2)),
       readTime: '5 min read',
-      url: 'https://example.com/deepmind-protein',
-      source: 'Science Daily',
-      categories: ['machine-learning', 'healthcare']
+      url: 'https://example.com/perplexity-ai-search-pro',
+      source: 'Perplexity AI',
+      categories: ['ai-tools', 'search', 'information-retrieval']
     },
     {
       id: 'mock-3',
-      title: 'AI Regulation Framework Adopted by Major Nations',
-      description: 'A coalition of 20 countries has agreed on a comprehensive AI regulation framework that balances innovation with safety. The framework includes standards for transparency, accountability, and ethical use of artificial intelligence.',
+      title: 'Microsoft Copilot Studio: New No-Code Platform for Building Custom AI Agents',
+      description: 'Microsoft has launched Copilot Studio, a no-code platform allowing businesses to create customized AI agents. The tool enables integration with enterprise data, custom workflows, and specialized knowledge bases without requiring programming expertise.',
       imageUrl: 'https://images.unsplash.com/photo-1589254065878-42c9da997008?q=80&w=1770&auto=format&fit=crop',
-      date: 'Feb 22, 2025',
+      date: formatDate(subtractDays(3)),
       readTime: '6 min read',
-      url: 'https://example.com/ai-regulation',
-      source: 'Global Policy Review',
-      categories: ['policy', 'ethics']
+      url: 'https://example.com/microsoft-copilot-studio',
+      source: 'Microsoft',
+      categories: ['ai-tools', 'no-code', 'productivity']
     },
     {
       id: 'mock-4',
-      title: 'Microsoft Introduces AI-Powered Coding Assistant',
-      description: 'Microsoft has launched a new AI coding assistant that can generate entire applications from natural language descriptions. The tool integrates with popular IDEs and supports over 20 programming languages.',
+      title: 'Stability AI Releases Stable Diffusion 3 With Unprecedented Image Quality',
+      description: 'Stability AI has unveiled Stable Diffusion 3, their latest image generation model featuring remarkable improvements in quality, coherence, and artistic control. The new model supports enhanced text-to-image capabilities and better follows complex prompts.',
       imageUrl: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?q=80&w=1770&auto=format&fit=crop',
-      date: 'Feb 20, 2025',
+      date: formatDate(subtractDays(4)),
       readTime: '3 min read',
-      url: 'https://example.com/microsoft-coding-ai',
-      source: 'Dev Insider',
-      categories: ['ai-tools', 'development']
+      url: 'https://example.com/stable-diffusion-3',
+      source: 'Stability AI',
+      categories: ['ai-tools', 'image-generation', 'creative']
     },
     {
       id: 'mock-5',
-      title: 'Autonomous Vehicles Reach Level 5 Autonomy',
-      description: 'Several major automotive companies have announced vehicles with Level 5 autonomy, capable of operating without human intervention in all conditions. The breakthrough comes after advancements in AI perception systems.',
+      title: 'ChatGPT Enterprise Adds Code Interpreter 2.0 with Enhanced Data Analysis Capabilities',
+      description: 'OpenAI has rolled out a major update to ChatGPT Enterprise\'s Code Interpreter, featuring improved data analysis, support for larger datasets, and interactive data visualization tools. The update allows businesses to process and analyze complex data directly within the chat interface.',
       imageUrl: 'https://images.unsplash.com/photo-1580273916550-e323be2ae537?q=80&w=1964&auto=format&fit=crop',
-      date: 'Feb 18, 2025',
+      date: formatDate(subtractDays(5)),
       readTime: '4 min read',
-      url: 'https://example.com/autonomous-vehicles-level5',
-      source: 'Auto Tech Review',
-      categories: ['robotics', 'computer-vision']
+      url: 'https://example.com/chatgpt-code-interpreter-2',
+      source: 'OpenAI',
+      categories: ['ai-tools', 'data-analysis', 'enterprise']
     },
     {
       id: 'mock-6',
-      title: 'AI Model Predicts Climate Change Patterns with 95% Accuracy',
-      description: 'A new AI model developed by climate scientists can predict climate change patterns with unprecedented accuracy. The system analyzes historical data and complex atmospheric interactions to forecast changes decades in advance.',
+      title: 'Notion AI Gets Major Upgrade with Writing Styles and Document Intelligence',
+      description: 'Notion has significantly expanded its AI capabilities with customizable writing styles, document summarization, and intelligent organization features. The new tools help users create content faster while maintaining their unique voice across different document types.',
       imageUrl: 'https://images.unsplash.com/photo-1611273426858-450e7f08d0bf?q=80&w=1770&auto=format&fit=crop',
-      date: 'Feb 15, 2025',
+      date: formatDate(subtractDays(6)),
       readTime: '5 min read',
-      url: 'https://example.com/ai-climate-prediction',
-      source: 'Environmental Science Journal',
-      categories: ['machine-learning', 'climate']
+      url: 'https://example.com/notion-ai-upgrade',
+      source: 'Notion',
+      categories: ['ai-tools', 'productivity', 'content-creation']
     },
     {
       id: 'mock-7',
-      title: 'Neural Interface Allows Direct Brain-Computer Communication',
-      description: 'Researchers have developed a non-invasive neural interface that allows direct communication between the human brain and computers. The technology enables users to control digital devices and input text through thought alone.',
+      title: 'Midjourney v6 Introduces Ultra-Realistic Mode and Advanced Compositing',
+      description: 'Midjourney has released version 6 of its AI image generator with a new ultra-realistic mode, improved compositional understanding, and enhanced style adaptation capabilities. The update gives artists and designers unprecedented control over generated imagery.',
       imageUrl: 'https://images.unsplash.com/photo-1580894732444-8ecded7900cd?q=80&w=1770&auto=format&fit=crop',
-      date: 'Feb 12, 2025',
-      readTime: '7 min read',
-      url: 'https://example.com/neural-interface',
-      source: 'Neuroscience Today',
-      categories: ['robotics', 'healthcare']
+      date: formatDate(subtractDays(7)),
+      readTime: '4 min read',
+      url: 'https://example.com/midjourney-v6',
+      source: 'Midjourney',
+      categories: ['ai-tools', 'image-generation', 'creative']
     },
     {
       id: 'mock-8',
-      title: 'AI-Generated Content Indistinguishable from Human Work in Blind Test',
-      description: 'In a comprehensive blind test, AI-generated content across various creative domains was found to be indistinguishable from human-created work. The study included writing, art, music, and code, raising new questions about creativity and authorship.',
-      imageUrl: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?q=80&w=1965&auto=format&fit=crop',
-      date: 'Feb 10, 2025',
-      readTime: '4 min read',
-      url: 'https://example.com/ai-content-test',
-      source: 'Digital Arts Magazine',
-      categories: ['ai-tools', 'creativity']
+      title: 'GitHub Copilot Enterprise Adds Project-Specific Intelligence and Custom Policies',
+      description: 'GitHub has enhanced Copilot Enterprise with project-specific AI models that understand proprietary codebases and company-specific development patterns. The update also introduces customizable security policies and improved code documentation features.',
+      imageUrl: 'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?q=80&w=1776&auto=format&fit=crop',
+      date: formatDate(subtractDays(8)),
+      readTime: '5 min read',
+      url: 'https://example.com/github-copilot-enterprise',
+      source: 'GitHub',
+      categories: ['ai-tools', 'development', 'enterprise']
     }
   ];
 }

@@ -92,6 +92,28 @@ export async function GET(request: Request) {
       }, { status: 200 });
     }
     
+    // If cache is empty or stale, fallback to hardcoded videos to prevent errors
+    const fallbackVideos = getFallbackVideos();
+    
+    // API key validation
+    if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'AIzaSyCmsFreWdDFd0nAb3cG8lPCSCWrQBgrB_s') {
+      console.warn('Using sample YouTube data - no valid API key found');
+      
+      // Update cache with fallback videos
+      videoCache = {
+        timestamp: Date.now(),
+        videos: fallbackVideos,
+        domainRotationDate: today
+      };
+      
+      return NextResponse.json({
+        videos: fallbackVideos,
+        lastUpdated: new Date().toISOString(),
+        fromFallback: true,
+        notice: "Using sample data - YouTube API key not configured"
+      }, { status: 200 });
+    }
+    
     // Prepare to store all video results
     let allVideos: VideoType[] = [];
     let apiSuccess = false;
@@ -193,7 +215,7 @@ export async function GET(request: Request) {
         }
         
         // If no cache, use hardcoded fallback videos
-        allVideos = getFallbackVideos();
+        allVideos = fallbackVideos;
       }
       
       // Remove duplicates (same video ID)
@@ -248,7 +270,7 @@ export async function GET(request: Request) {
       
       // If no cache, use hardcoded fallback videos
       return NextResponse.json({
-        videos: getFallbackVideos(),
+        videos: fallbackVideos,
         lastUpdated: new Date().toISOString(),
         fromFallback: true
       }, { status: 200 });  // Still return 200 to prevent UI errors

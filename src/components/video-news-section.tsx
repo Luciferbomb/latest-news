@@ -98,61 +98,97 @@ export default function VideoNewsSection() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
   const fetchVideos = async () => {
     setIsLoading(true);
+    setError(null);
+    setDebugInfo(null);
+    
     try {
-      // Fetch videos from our YouTube API endpoint focused on AI image generation
-      const response = await fetch('/api/youtube?q=AI+image+generation+midjourney+stable+diffusion+dall-e');
+      // Fetch videos from our YouTube API endpoint with a focus on AI tools and image generation
+      const response = await fetch('/api/youtube?q=AI+tools+image+generation+midjourney+stable+diffusion+dall-e&refresh=true');
       
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
       
       const data = await response.json();
+      console.log('YouTube API response:', data); // Log the full response for debugging
       
-      if (data.videos && data.videos.length > 0) {
+      if (data.videos && Array.isArray(data.videos) && data.videos.length > 0) {
         // Transform the API response to match our VideoItem interface
         const fetchedVideos = data.videos.map((video: any) => ({
-          id: video.id,
-          title: video.title,
-          description: video.description,
-          thumbnailUrl: video.thumbnailUrl,
-          videoUrl: video.videoUrl,
-          embedUrl: video.embedUrl,
-          source: video.source,
-          date: video.date,
-          channelUrl: video.channelUrl
+          id: video.id || `video-${Math.random().toString(36).substr(2, 9)}`,
+          title: video.title || 'Untitled Video',
+          description: video.description || 'No description available',
+          thumbnailUrl: video.thumbnailUrl || 'https://via.placeholder.com/640x360?text=No+Thumbnail',
+          videoUrl: video.videoUrl || '#',
+          embedUrl: video.embedUrl || undefined,
+          source: video.source || 'Unknown Source',
+          date: video.date || 'Unknown Date',
+          channelUrl: video.channelUrl || '#'
         }));
         
-        // Filter videos to focus on image generation
-        const filteredVideos = fetchedVideos.filter((video: VideoItem) => {
+        // Check if all required fields are populated
+        const validVideos = fetchedVideos.filter((video: VideoItem) => 
+          video.title && video.description && video.thumbnailUrl && 
+          (video.videoUrl || video.embedUrl)
+        );
+        
+        if (validVideos.length === 0) {
+          setDebugInfo(JSON.stringify(fetchedVideos, null, 2).substring(0, 500) + '...');
+          throw new Error('Received videos but they are missing required fields');
+        }
+        
+        // Filter videos to focus on image generation and AI tools
+        const filteredVideos = validVideos.filter((video: VideoItem) => {
           const content = `${video.title.toLowerCase()} ${video.description.toLowerCase()}`;
-          const imageGenKeywords = ['image generation', 'ai art', 'midjourney', 'stable diffusion', 'dall-e', 'dall e', 'ai image', 'generated image'];
-          return imageGenKeywords.some(keyword => content.includes(keyword));
+          const aiKeywords = [
+            'ai', 'artificial intelligence', 'machine learning', 'neural network',
+            'deep learning', 'image generation', 'text-to-image', 'ai tool',
+            'ai art', 'midjourney', 'stable diffusion', 'dall-e', 'ai image',
+            'generated image', 'ai agent', 'chatgpt', 'claude', 'gemini'
+          ];
+          return aiKeywords.some(keyword => content.includes(keyword));
         });
         
         if (filteredVideos.length > 0) {
           setVideos(filteredVideos);
           setLastUpdated(new Date());
-          setError(null);
         } else {
-          // If no filtered videos, use all videos as fallback
-          setVideos(fetchedVideos);
+          // If no filtered videos, use all valid videos as fallback
+          setVideos(validVideos);
           setLastUpdated(new Date());
-          setError(null);
         }
       } else {
-        // If no videos were returned, show an error
-        console.log('No videos returned from API');
-        setVideos([]);
-        setLastUpdated(new Date());
-        setError('No videos available. Please try again later.');
+        // If no videos were returned, log the response and show an error
+        console.warn('No videos returned from API:', data);
+        setDebugInfo(JSON.stringify(data, null, 2).substring(0, 500) + '...');
+        
+        if (data.notice) {
+          setError(`${data.notice}. Please try again later.`);
+        } else if (data.error) {
+          setError(`Error: ${data.error}. Please try again later.`);
+        } else {
+          setError('No videos available. Please try again later.');
+        }
+        
+        // Use sample videos as a fallback if available
+        if (SAMPLE_VIDEOS.length > 0) {
+          console.log('Using sample videos as fallback');
+          setVideos(SAMPLE_VIDEOS);
+        }
       }
     } catch (err: any) {
       console.error('Error fetching videos:', err);
-      setError('Failed to fetch video content. Please try again later.');
-      setVideos([]);
+      setError(`Failed to fetch video content: ${err.message}. Please try again later.`);
+      
+      // Use sample videos as a fallback
+      if (SAMPLE_VIDEOS.length > 0) {
+        console.log('Using sample videos as fallback after error');
+        setVideos(SAMPLE_VIDEOS);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -195,6 +231,11 @@ export default function VideoNewsSection() {
         ) : error ? (
           <div className="max-w-md mx-auto bg-red-500/10 border border-red-500/20 rounded-lg p-6 text-center">
             <p className="text-red-400 mb-4">{error}</p>
+            {debugInfo && (
+              <div className="mb-4 overflow-auto max-h-32 bg-black/40 p-2 rounded text-xs text-left">
+                <pre className="text-red-300">{debugInfo}</pre>
+              </div>
+            )}
             <button 
               onClick={fetchVideos}
               className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-md transition-colors"

@@ -75,6 +75,7 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
       };
     }
     
+    // Use the correct DeepSeek API endpoint and request format
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -82,7 +83,7 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
         'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: "deepseek-chat",
         messages: [
           {
             "role": "system",
@@ -94,7 +95,8 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
           }
         ],
         temperature: 0.7,
-        max_tokens: 150
+        max_tokens: 150,
+        stream: false
       })
     });
     
@@ -102,18 +104,27 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
       console.error(`DeepSeek API error: ${response.status}`);
       const errorText = await response.text();
       console.error(`Error details: ${errorText}`);
+      
+      // If there's a 502 error, fall back to our built-in response
+      if (response.status === 502) {
+        console.warn('DeepSeek API returned 502 error, falling back to built-in responses');
+        return generateFallbackResponse(query);
+      }
+      
       throw new Error(`DeepSeek API error: ${response.status}`);
     }
     
     const data = await response.json();
-    const answer = data.choices?.[0]?.message?.content?.trim();
+    // Extract the response using the correct path for this API
+    const answer = data.choices?.[0]?.message?.content;
     
     if (!answer) {
-      throw new Error('Empty response from DeepSeek');
+      console.error('Unexpected DeepSeek API response format:', JSON.stringify(data));
+      throw new Error('Empty or invalid response from DeepSeek');
     }
     
     return {
-      answer,
+      answer: answer.trim(),
       confidence: 0.9,
       isTechQuestion: true,
       source: "deepseek"
@@ -121,7 +132,8 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
     
   } catch (error) {
     console.error('Error calling DeepSeek:', error);
-    return null;
+    // Fall back to our built-in response
+    return generateFallbackResponse(query);
   }
 }
 
@@ -185,6 +197,10 @@ function generateFallbackResponse(query: string): VoiceAssistantResponse {
 // Track requests to prevent duplicates
 const pendingQueries = new Map<string, Promise<VoiceAssistantResponse>>();
 
+// Simple in-memory cache to reduce repeated API calls
+const responseCache = new Map<string, {response: VoiceAssistantResponse, timestamp: number}>();
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+
 export async function POST(request: Request) {
   try {
     // Parse the request body
@@ -207,21 +223,44 @@ export async function POST(request: Request) {
       return NextResponse.json(response, { status: 200 });
     }
     
+    // Check cache first
+    const normalizedQuery = body.query.toLowerCase().trim();
+    const cachedItem = responseCache.get(normalizedQuery);
+    
+    if (cachedItem && (Date.now() - cachedItem.timestamp) < CACHE_TTL) {
+      console.log(`Using cached response for: ${normalizedQuery}`);
+      return NextResponse.json(cachedItem.response, { status: 200 });
+    }
+    
     // Log the query (for debugging)
     console.log(`Voice assistant query: ${body.query}`);
     
     // Create a promise for the query processing
     const responsePromise = (async () => {
-      // Try to get a response from DeepSeek first
-      const deepSeekResponse = await getDeepSeekResponse(body.query);
-      
-      // If we got a valid response from DeepSeek, use that
-      if (deepSeekResponse) {
-        return deepSeekResponse;
+      try {
+        // First try to get a response from DeepSeek
+        const deepSeekResponse = await getDeepSeekResponse(body.query);
+        
+        // Store successful response in cache
+        if (deepSeekResponse) {
+          responseCache.set(normalizedQuery, {
+            response: deepSeekResponse,
+            timestamp: Date.now()
+          });
+          return deepSeekResponse;
+        }
+        
+        // Fallback if DeepSeek fails
+        const fallbackResponse = generateFallbackResponse(body.query);
+        responseCache.set(normalizedQuery, {
+          response: fallbackResponse,
+          timestamp: Date.now()
+        });
+        return fallbackResponse;
+      } catch (error) {
+        console.error("Error processing query:", error);
+        return generateFallbackResponse(body.query);
       }
-      
-      // Otherwise, fall back to our built-in response generator
-      return generateFallbackResponse(body.query);
     })();
     
     // Store the promise in our map
@@ -241,13 +280,15 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Error processing voice assistant query:', error);
     
-    return NextResponse.json(
-      { 
-        error: 'Failed to process query',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+    // Provide a fallback response even on errors
+    const fallbackResponse = {
+      answer: "I'm sorry, I'm having trouble processing your request. Please try again in a moment.",
+      confidence: 0.5,
+      isTechQuestion: true,
+      source: "error_fallback"
+    };
+    
+    return NextResponse.json(fallbackResponse, { status: 200 });
   }
 }
 
@@ -267,6 +308,15 @@ export async function GET(request: Request) {
     // Create a unique key for this query
     const queryKey = `get-${query}`;
     
+    // Check cache first
+    const normalizedQuery = query.toLowerCase().trim();
+    const cachedItem = responseCache.get(normalizedQuery);
+    
+    if (cachedItem && (Date.now() - cachedItem.timestamp) < CACHE_TTL) {
+      console.log(`Using cached response for GET: ${normalizedQuery}`);
+      return NextResponse.json(cachedItem.response, { status: 200 });
+    }
+    
     // Check if we're already processing this exact query
     if (pendingQueries.has(queryKey)) {
       console.log(`Duplicate GET query detected: ${query}`);
@@ -276,16 +326,30 @@ export async function GET(request: Request) {
     
     // Create a promise for the query processing
     const responsePromise = (async () => {
-      // Try to get a response from DeepSeek first
-      const deepSeekResponse = await getDeepSeekResponse(query);
-      
-      // If we got a valid response from DeepSeek, use that
-      if (deepSeekResponse) {
-        return deepSeekResponse;
+      try {
+        // Try to get a response from DeepSeek first
+        const deepSeekResponse = await getDeepSeekResponse(query);
+        
+        // Store successful response in cache
+        if (deepSeekResponse) {
+          responseCache.set(normalizedQuery, {
+            response: deepSeekResponse,
+            timestamp: Date.now()
+          });
+          return deepSeekResponse;
+        }
+        
+        // Fallback if DeepSeek fails
+        const fallbackResponse = generateFallbackResponse(query);
+        responseCache.set(normalizedQuery, {
+          response: fallbackResponse,
+          timestamp: Date.now()
+        });
+        return fallbackResponse;
+      } catch (error) {
+        console.error("Error processing GET query:", error);
+        return generateFallbackResponse(query);
       }
-      
-      // Otherwise, fall back to our built-in response generator
-      return generateFallbackResponse(query);
     })();
     
     // Store the promise in our map
@@ -305,12 +369,14 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('Error processing voice assistant query:', error);
     
-    return NextResponse.json(
-      { 
-        error: 'Failed to process query',
-        details: error.message 
-      },
-      { status: 500 }
-    );
+    // Provide a fallback response even on errors
+    const fallbackResponse = {
+      answer: "I'm sorry, I'm having trouble processing your request. Please try again in a moment.",
+      confidence: 0.5,
+      isTechQuestion: true,
+      source: "error_fallback"
+    };
+    
+    return NextResponse.json(fallbackResponse, { status: 200 });
   }
 } 

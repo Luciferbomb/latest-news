@@ -11,6 +11,7 @@ interface VoiceAssistantResponse {
   answer: string;
   confidence: number;
   isTechQuestion: boolean;
+  source?: string;
 }
 
 export default function useVoiceAssistant({
@@ -33,6 +34,8 @@ export default function useVoiceAssistant({
   const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastQueryRef = useRef<string>('');
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef<string>('');
   
   // Initialize speech recognition on component mount
   useEffect(() => {
@@ -109,6 +112,11 @@ export default function useVoiceAssistant({
       if (processingTimeoutRef.current) {
         clearTimeout(processingTimeoutRef.current);
       }
+
+      // Abort any in-flight fetch requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
   }, []);
   
@@ -130,8 +138,15 @@ export default function useVoiceAssistant({
         if (isProcessing) {
           console.warn("Processing timeout reached. Resetting state.");
           setIsProcessing(false);
+          setError("Request timed out. Please try again.");
+          onError?.("Request timed out. Please try again.");
+          
+          // Abort any pending fetch
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+          }
         }
-      }, 10000); // 10 second timeout
+      }, 8000); // 8 second timeout
       
       // Update last query and process the new one
       lastQueryRef.current = finalTranscript;
@@ -143,8 +158,14 @@ export default function useVoiceAssistant({
   const processTranscript = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
     
-    // Set a unique session ID for this request
-    const sessionId = `session-${Date.now()}`;
+    // Generate a unique request ID
+    requestIdRef.current = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Create a new AbortController for this request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
     
     setIsProcessing(true);
     
@@ -156,15 +177,28 @@ export default function useVoiceAssistant({
         },
         body: JSON.stringify({ 
           query: text.trim(),
-          sessionId
+          sessionId: requestIdRef.current
         }),
+        signal: abortControllerRef.current.signal
       });
       
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        if (response.status === 502) {
+          // Special handling for 502 errors - these are likely API gateway issues
+          console.error("Received 502 error from voice assistant API");
+          throw new Error("The voice assistant service is currently unavailable (502 error). Using fallback responses.");
+        } else {
+          throw new Error(`Server error: ${response.status}`);
+        }
       }
       
       const data = await response.json();
+      
+      // Check for error response
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
       setResponse(data);
       onResponse?.(data);
       
@@ -172,9 +206,31 @@ export default function useVoiceAssistant({
       speakResponse(data.answer);
       
     } catch (err: any) {
+      // Check if this is an abort error (user cancelled)
+      if (err.name === 'AbortError') {
+        console.log('Request was cancelled');
+        return;
+      }
+      
       const errorMessage = err.message || 'Failed to process voice command';
       setError(errorMessage);
       onError?.(errorMessage);
+      
+      // Provide a fallback response if needed
+      if (errorMessage.includes("502")) {
+        // If it's a 502 error, try to get a fallback response from local storage if possible
+        // or use a generic one
+        const fallbackResponse = {
+          answer: "I'm having trouble connecting to my knowledge base right now. Please try again shortly or check your internet connection.",
+          confidence: 0.5,
+          isTechQuestion: true,
+          source: "fallback_from_client"
+        };
+        
+        setResponse(fallbackResponse);
+        onResponse?.(fallbackResponse);
+        speakResponse(fallbackResponse.answer);
+      }
     } finally {
       setIsProcessing(false);
       

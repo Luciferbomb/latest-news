@@ -12,8 +12,9 @@ interface VoiceAssistantProps {
 
 export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps) {
   const [isMinimized, setIsMinimized] = useState(false);
-  const [messages, setMessages] = useState<{type: 'user' | 'assistant' | 'system', text: string}[]>([]);
+  const [messages, setMessages] = useState<{type: 'user' | 'assistant' | 'system' | 'error', text: string}[]>([]);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [networkStatus, setNetworkStatus] = useState<'online' | 'offline' | 'error'>('online');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeQueryRef = useRef<string | null>(null);
   
@@ -35,20 +36,55 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
       if (activeQueryRef.current) {
         setMessages(prev => [
           ...prev,
-          { type: 'assistant', text: response.answer }
+          { 
+            type: 'assistant', 
+            text: response.answer,
+          }
         ]);
         activeQueryRef.current = null;
+        
+        // If we got a response, we must be online
+        if (networkStatus !== 'online') {
+          setNetworkStatus('online');
+        }
       }
     },
     onError: (error) => {
       console.error('Voice assistant error:', error);
-      // Show error message to user
-      setMessages(prev => [
-        ...prev,
-        { type: 'system', text: `Error: ${error}. Please try again.` }
-      ]);
+      
+      // Check if it's a network error
+      if (error.includes('502') || error.includes('unavailable') || error.includes('network')) {
+        setNetworkStatus('error');
+        setMessages(prev => [
+          ...prev,
+          { 
+            type: 'error', 
+            text: `Network error: The voice assistant service is currently unavailable. Using local fallback responses.` 
+          }
+        ]);
+      } else {
+        // Show error message to user
+        setMessages(prev => [
+          ...prev,
+          { type: 'system', text: `Error: ${error}. Please try again.` }
+        ]);
+      }
     }
   });
+  
+  // Check network status
+  useEffect(() => {
+    const handleOnline = () => setNetworkStatus('online');
+    const handleOffline = () => setNetworkStatus('offline');
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   
   // Scroll to bottom of messages when new ones are added
   useEffect(() => {
@@ -192,6 +228,20 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                     <span className="text-white text-xs font-semibold">AI</span>
                   </div>
                   <h3 className="ml-3 text-white font-semibold">Tech Voice Assistant</h3>
+                  
+                  {/* Network status indicator */}
+                  {networkStatus === 'offline' && (
+                    <div className="ml-2 px-2 py-0.5 bg-yellow-600/20 border border-yellow-600/40 rounded-full flex items-center">
+                      <span className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></span>
+                      <span className="text-yellow-500 text-xs">Offline</span>
+                    </div>
+                  )}
+                  {networkStatus === 'error' && (
+                    <div className="ml-2 px-2 py-0.5 bg-red-600/20 border border-red-600/40 rounded-full flex items-center">
+                      <span className="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
+                      <span className="text-red-500 text-xs">API Error</span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   {hasInteracted && (
@@ -229,6 +279,22 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                     <p className="text-neutral-400 text-sm max-w-xs">
                       Ask me anything about AI, technology, programming, or the latest tech news.
                     </p>
+                    
+                    {networkStatus === 'offline' && (
+                      <div className="mt-4 p-2 bg-yellow-600/20 border border-yellow-600/40 rounded-md">
+                        <p className="text-yellow-500 text-xs">
+                          You appear to be offline. Voice assistant will use limited local responses.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {networkStatus === 'error' && (
+                      <div className="mt-4 p-2 bg-red-600/20 border border-red-600/40 rounded-md">
+                        <p className="text-red-500 text-xs">
+                          The voice assistant API is currently unavailable. Using fallback responses.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -238,7 +304,7 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                         className={`flex ${
                           message.type === 'user' 
                             ? 'justify-end' 
-                            : message.type === 'system' 
+                            : message.type === 'system' || message.type === 'error'
                             ? 'justify-center' 
                             : 'justify-start'
                         }`}
@@ -249,10 +315,15 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                               ? 'bg-purple-600 text-white'
                               : message.type === 'system'
                               ? 'bg-yellow-600 text-white flex items-center'
+                              : message.type === 'error'
+                              ? 'bg-red-600 text-white flex items-center'
                               : 'bg-neutral-700 text-white'
                           }`}
                         >
                           {message.type === 'system' && (
+                            <AlertCircle size={16} className="mr-2 flex-shrink-0" />
+                          )}
+                          {message.type === 'error' && (
                             <AlertCircle size={16} className="mr-2 flex-shrink-0" />
                           )}
                           {message.text}
@@ -287,7 +358,9 @@ export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps)
                   </div>
                   
                   <div className="flex gap-2">
-                    {error && <p className="text-red-400 text-sm max-w-[200px] truncate">{error}</p>}
+                    {error && !error.includes("502") && (
+                      <p className="text-red-400 text-sm max-w-[200px] truncate">{error}</p>
+                    )}
                     <button
                       onClick={isListening ? stopListening : startListening}
                       disabled={isProcessing}

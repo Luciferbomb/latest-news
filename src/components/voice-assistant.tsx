@@ -1,536 +1,484 @@
-"use client";
+'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Volume2, X, AlertCircle, Loader2 } from 'lucide-react';
-import useVoiceAssistant from '@/hooks/useVoiceAssistant';
+import { Mic, MicOff, Volume2, X, Send } from 'lucide-react';
+import { useVoiceAssistant, VoiceAssistantMessage, NetworkStatus } from '@/hooks/useVoiceAssistant';
 
-// Define message types
-type MessageType = 'user' | 'assistant' | 'system' | 'error';
-
-interface Message {
-  text: string;
-  type: MessageType;
-  timestamp: number;
-  isProcessing?: boolean;
-}
-
-interface VoiceAssistantProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-// Network status types
-type NetworkStatusType = 'online' | 'offline' | 'error' | 'processing';
-
-export default function VoiceAssistant({ isOpen, onClose }: VoiceAssistantProps) {
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [networkStatus, setNetworkStatus] = useState<NetworkStatusType>('online');
-  const [showWelcome, setShowWelcome] = useState(true);
+// Enhanced wave visualizer component with smoother animations
+const VoiceVisualizer = ({ isActive, mode }: { isActive: boolean; mode: 'listening' | 'speaking' }) => {
+  // Different colors for listening vs speaking
+  const color = mode === 'listening' ? 'bg-blue-500' : 'bg-green-500';
   
-  // Enhanced visualizer states
-  const [visualizerType, setVisualizerType] = useState<'idle' | 'listening' | 'speaking'>('idle');
-  const [visualizerIntensity, setVisualizerIntensity] = useState(0);
+  // We'll use 5 bars for the visualizer
+  return (
+    <div className="flex items-center justify-center h-6 gap-1 px-2">
+      {[...Array(5)].map((_, i) => (
+        <motion.div
+          key={i}
+          className={`w-1 ${color} rounded-full`}
+          initial={{ height: 4 }}
+          animate={{ 
+            height: isActive 
+              ? [4, 12 + Math.random() * 12, 4, 16 + Math.random() * 8, 4] 
+              : 4 
+          }}
+          transition={{ 
+            duration: isActive ? 1.5 : 0.2, 
+            repeat: isActive ? Infinity : 0,
+            repeatType: "reverse",
+            // Each bar has a slightly different timing
+            delay: i * 0.1,
+            ease: "easeInOut"
+          }}
+        />
+      ))}
+    </div>
+  );
+};
+
+// Typing animation for assistant responses
+const TypingAnimation = ({ children, isTyping }: { children: string; isTyping: boolean }) => {
+  const [displayText, setDisplayText] = useState('');
+  const textRef = useRef(children);
+  const charIndexRef = useRef(0);
   
-  // Animation timelines for smooth transitions
-  const visualizerTimeline = useRef<number[]>([]);
+  useEffect(() => {
+    // Reset when content changes
+    textRef.current = children;
+    if (!isTyping) {
+      setDisplayText(children);
+      charIndexRef.current = children.length;
+      return;
+    }
+    
+    // Start typing animation from the beginning
+    charIndexRef.current = 0;
+    setDisplayText('');
+    
+    // Typing animation with varying speed
+    const typingInterval = setInterval(() => {
+      if (charIndexRef.current < textRef.current.length) {
+        charIndexRef.current += 1;
+        setDisplayText(textRef.current.substring(0, charIndexRef.current));
+        
+        // Type faster for long responses
+        if (charIndexRef.current === textRef.current.length) {
+          clearInterval(typingInterval);
+        }
+      } else {
+        clearInterval(typingInterval);
+      }
+    }, 20); // Base typing speed
+    
+    return () => clearInterval(typingInterval);
+  }, [children, isTyping]);
+  
+  return <>{displayText}</>;
+};
+
+// Message bubble component
+const MessageBubble = ({ message }: { message: VoiceAssistantMessage }) => {
+  const [isAnimating, setIsAnimating] = useState(true);
+  
+  useEffect(() => {
+    // Animation duration based on text length, but capped
+    const duration = Math.min(message.text.length * 10, 1000);
+    const timer = setTimeout(() => setIsAnimating(false), duration);
+    return () => clearTimeout(timer);
+  }, [message.text.length]);
+  
+  const bubbleClass = message.isUser 
+    ? 'bg-blue-500 text-white ml-auto' 
+    : message.type === 'error'
+      ? 'bg-red-100 text-red-800 border border-red-300'
+      : message.type === 'thinking'
+      ? 'bg-gray-100 text-gray-600 border border-gray-200'
+      : 'bg-gray-100 text-gray-800';
+  
+  return (
+    <motion.div 
+      className={`max-w-[80%] rounded-lg px-4 py-2 mb-2 ${bubbleClass}`}
+      initial={{ opacity: 0, y: 20, scale: 0.8 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      {message.type === 'thinking' ? (
+        <div className="flex items-center gap-2">
+          <div className="text-sm">{message.text}</div>
+          <motion.div
+            className="w-1.5 h-1.5 bg-gray-500 rounded-full"
+            animate={{ scale: [1, 1.5, 1] }}
+            transition={{ duration: 0.5, repeat: Infinity }}
+          />
+          <motion.div
+            className="w-1.5 h-1.5 bg-gray-500 rounded-full"
+            animate={{ scale: [1, 1.5, 1] }}
+            transition={{ duration: 0.5, repeat: Infinity, delay: 0.15 }}
+          />
+          <motion.div
+            className="w-1.5 h-1.5 bg-gray-500 rounded-full"
+            animate={{ scale: [1, 1.5, 1] }}
+            transition={{ duration: 0.5, repeat: Infinity, delay: 0.3 }}
+          />
+        </div>
+      ) : (
+        <TypingAnimation isTyping={isAnimating}>
+          {message.text}
+        </TypingAnimation>
+      )}
+    </motion.div>
+  );
+};
+
+// Network status indicator
+const NetworkStatusIndicator = ({ status }: { status: NetworkStatus }) => {
+  if (!status.error && status.online) return null;
+  
+  const statusClass = !status.online 
+    ? 'bg-red-100 text-red-800 border-red-300'
+    : status.error?.includes('502')
+    ? 'bg-orange-100 text-orange-800 border-orange-300'
+    : 'bg-yellow-100 text-yellow-800 border-yellow-300';
+  
+  const statusMessage = !status.online 
+    ? 'Offline - Please check your connection'
+    : status.error?.includes('502')
+    ? 'Server is busy - May experience delays'
+    : `API Issue: ${status.error}`;
+  
+  return (
+    <motion.div 
+      className={`text-xs px-3 py-1 rounded-full mb-2 border ${statusClass} flex items-center gap-1`}
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+    >
+      <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+      {statusMessage}
+    </motion.div>
+  );
+};
+
+export default function VoiceAssistant() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [textInput, setTextInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [lastInteraction, setLastInteraction] = useState<Date>(new Date());
+  const [isPermanent, setIsPermanent] = useState(false);
+  const [animationState, setAnimationState] = useState<
+    'idle' | 'listening' | 'processing' | 'speaking'
+  >('idle');
   
-  // Use custom hook
+  // Using our enhanced voice assistant hook
   const {
     isListening,
     isProcessing,
     isSpeaking,
-    transcript,
-    response,
+    messages,
     error,
+    networkStatus,
     startListening,
     stopListening,
+    submitQuery,
+    cancelRequest,
+    stopSpeaking,
+    clearMessages,
+    newSession
   } = useVoiceAssistant({
-    onListening: (isActive) => {
-      if (isActive) {
-        setVisualizerType('listening');
-        // Start visualizer animation when listening
-        startVisualizerAnimation('listening');
-      } else {
-        if (!isProcessing) {
-          setVisualizerType('idle');
-        }
-      }
+    onProcessingStart: () => {
+      setAnimationState('processing');
+      setLastInteraction(new Date());
     },
-    onResult: (result) => {
-      // Update visualizer intensity based on speech volume
-      const intensity = Math.min(0.5 + (result.length % 10) * 0.05, 1);
-      setVisualizerIntensity(intensity);
+    onProcessingEnd: () => {
+      setAnimationState(isSpeaking ? 'speaking' : 'idle');
     },
-    onResponse: (responseData) => {
-      const newMessage: Message = {
-        text: responseData.answer,
-        type: 'assistant',
-        timestamp: Date.now(),
-      };
-      
-      // Add the assistant message
-      setMessages(prev => [...prev, newMessage]);
-      
-      // Update network status back to online
-      setNetworkStatus('online');
-      
-      // Update visualizer for speaking
-      setVisualizerType('speaking');
-      startVisualizerAnimation('speaking');
-      
-      // Track the assistant's speaking
-      setTimeout(() => {
-        if (!isListening && !isProcessing) {
-          setVisualizerType('idle');
-        }
-      }, responseData.answer.length * 80); // Approximate time it takes to speak
+    onResponse: () => {
+      setLastInteraction(new Date());
     },
-    onError: (errorMsg) => {
-      // Handle network errors
-      if (errorMsg.includes('502') || errorMsg.includes('unavailable')) {
-        setNetworkStatus('error');
-      }
-      
-      // Only add error message if it's significant
-      if (!errorMsg.includes('aborted') && !errorMsg.includes('no-speech')) {
-        const newMessage: Message = {
-          text: errorMsg,
-          type: 'error',
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, newMessage]);
-      }
-      
-      setVisualizerType('idle');
+    onError: (error) => {
+      console.error('Voice assistant error:', error);
+      setAnimationState('idle');
+      setLastInteraction(new Date());
     },
+    onNetworkStatusChange: () => {
+      // If network status changes, we'll re-render with the updated status
+      setLastInteraction(new Date());
+    }
   });
   
-  // Start a visualizer animation based on mode
-  const startVisualizerAnimation = (mode: 'listening' | 'speaking') => {
-    // Clear any existing animation
-    visualizerTimeline.current.forEach(id => window.clearInterval(id));
-    visualizerTimeline.current = [];
-    
-    if (mode === 'listening') {
-      // Listening has more random fluctuations
-      const intervalId = window.setInterval(() => {
-        setVisualizerIntensity(Math.random() * 0.7 + 0.3);
-      }, 150);
-      visualizerTimeline.current.push(intervalId);
-    } else if (mode === 'speaking') {
-      // Speaking has a more rhythmic pattern
-      const baseInterval = 180;
-      const intervalId1 = window.setInterval(() => {
-        setVisualizerIntensity(prevIntensity => {
-          const newIntensity = Math.sin(Date.now() / 1000) * 0.3 + 0.7;
-          return Math.max(0.2, Math.min(1, newIntensity));
-        });
-      }, baseInterval);
-      visualizerTimeline.current.push(intervalId1);
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  };
-  
-  // Clean up animations when component unmounts
-  useEffect(() => {
-    return () => {
-      visualizerTimeline.current.forEach(id => window.clearInterval(id));
-    };
-  }, []);
-  
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-  
-  // Reset messages when closed
+
+  // Focus input when opened
   useEffect(() => {
-    if (!isOpen) {
-      // Wait for close animation to finish
-      const timer = setTimeout(() => {
-        setMessages([]);
-        setIsMinimized(false);
-        setShowWelcome(true);
-      }, 500);
-      return () => clearTimeout(timer);
+    if (isOpen && inputRef.current) {
+      setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [isOpen]);
-  
-  // Show welcome message briefly when opened
+
+  // Update animation state based on voice assistant state
   useEffect(() => {
-    if (isOpen && showWelcome) {
-      const timer = setTimeout(() => {
-        setShowWelcome(false);
-      }, 2500);
-      return () => clearTimeout(timer);
+    if (isListening) {
+      setAnimationState('listening');
+    } else if (isProcessing) {
+      setAnimationState('processing');
+    } else if (isSpeaking) {
+      setAnimationState('speaking');
+    } else {
+      setAnimationState('idle');
     }
-  }, [isOpen, showWelcome]);
-  
-  // Handle online/offline status
+  }, [isListening, isProcessing, isSpeaking]);
+
+  // Auto-close after inactivity (if not permanent)
   useEffect(() => {
-    const handleOnline = () => setNetworkStatus('online');
-    const handleOffline = () => setNetworkStatus('offline');
+    if (!isOpen || isPermanent) return;
     
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-  
-  // Enhanced user message handler
-  const handleUserMessage = () => {
-    if (transcript.trim()) {
-      const newMessage: Message = {
-        text: transcript,
-        type: 'user',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, newMessage]);
-      
-      // Show temporary processing state
-      setNetworkStatus('processing');
-    }
-  };
-  
-  // Listen for transcript changes to add user messages
-  useEffect(() => {
-    if (!isListening && transcript && isProcessing) {
-      handleUserMessage();
-    }
-  }, [isListening, transcript, isProcessing]);
-  
-  // Function to render visualizer bars with improved animation
-  const renderVisualizerBars = () => {
-    const numberOfBars = 9;
-    const bars = [];
-    
-    for (let i = 0; i < numberOfBars; i++) {
-      const isMiddle = i === Math.floor(numberOfBars / 2);
-      const baseHeight = isMiddle ? 10 : 6 + Math.abs(i - Math.floor(numberOfBars / 2)) * 0.5;
-      
-      // Different visualizer styles based on state
-      let barColor = 'bg-neutral-600';
-      let multiplier = 0.2; // idle
-      
-      if (visualizerType === 'listening') {
-        barColor = 'bg-purple-500';
-        // More dynamic for listening
-        multiplier = visualizerIntensity * 1.4 * (0.6 + Math.sin(i * 0.8) * 0.4);
-      } else if (visualizerType === 'speaking') {
-        barColor = 'bg-cyan-500';
-        // More rhythmic for speaking
-        multiplier = visualizerIntensity * (0.8 + Math.cos(i * 0.7) * 0.3);
+    // Auto-close after 60 seconds of inactivity
+    const inactivityTimeout = setTimeout(() => {
+      if (!isListening && !isProcessing && !isSpeaking) {
+        setIsOpen(false);
       }
-      
-      // Calculate height with smoother animation
-      const height = baseHeight * multiplier;
-      
-      bars.push(
-        <motion.div
-          key={i}
-          className={`w-0.5 mx-0.5 rounded-full ${barColor}`}
-          initial={{ height: 2 }}
-          animate={{ 
-            height: Math.max(2, height),
-            opacity: multiplier < 0.3 ? 0.5 : 1
-          }}
-          transition={{ 
-            type: 'spring',
-            stiffness: 300,
-            damping: 15,
-            mass: 0.8
-          }}
-        />
-      );
-    }
+    }, 60000);
     
-    return (
-      <div className="flex items-end h-8 space-x-0.5">
-        {bars}
-      </div>
-    );
+    return () => clearTimeout(inactivityTimeout);
+  }, [isOpen, isPermanent, isListening, isProcessing, isSpeaking, lastInteraction]);
+
+  // Handle toggle
+  const handleToggle = () => {
+    if (isOpen) {
+      // Close and reset
+      setIsOpen(false);
+      stopListening();
+      stopSpeaking();
+      cancelRequest();
+    } else {
+      // Open
+      setIsOpen(true);
+      setLastInteraction(new Date());
+    }
+  };
+
+  // Handle microphone click
+  const handleMicrophoneClick = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+    setLastInteraction(new Date());
+  };
+
+  // Handle text input submission
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (textInput.trim()) {
+      submitQuery(textInput.trim());
+      setTextInput('');
+    }
+    setLastInteraction(new Date());
+    
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  // Handle toggle permanent mode
+  const handleTogglePermanent = () => {
+    setIsPermanent(!isPermanent);
+    setLastInteraction(new Date());
   };
   
+  // Get icon and color based on animation state
+  const getButtonStyles = () => {
+    switch (animationState) {
+      case 'listening':
+        return {
+          icon: <Mic size={20} />,
+          className: 'bg-blue-500 text-white shadow-lg animate-pulse',
+        };
+      case 'processing':
+        return {
+          icon: (
+            <div className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+          ),
+          className: 'bg-yellow-500 text-white shadow-lg',
+        };
+      case 'speaking':
+        return {
+          icon: <Volume2 size={20} />,
+          className: 'bg-green-500 text-white shadow-lg',
+        };
+      default:
+        return {
+          icon: <Mic size={20} />,
+          className: 'bg-gray-200 text-gray-700 hover:bg-gray-300',
+        };
+    }
+  };
+
+  const { icon, className } = getButtonStyles();
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-        >
+    <>
+      {/* Floating button */}
+      <motion.button
+        onClick={handleToggle}
+        className={`fixed bottom-6 right-6 flex items-center justify-center w-12 h-12 rounded-full z-50 ${className}`}
+        whileTap={{ scale: 0.9 }}
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+        aria-label="Voice Assistant"
+      >
+        {icon}
+      </motion.button>
+
+      {/* Modal dialog */}
+      <AnimatePresence>
+        {isOpen && (
           <motion.div
-            className="bg-neutral-900 border border-neutral-800 shadow-xl rounded-lg w-full max-w-md overflow-hidden"
-            initial={{ scale: 0.9, y: 40, opacity: 0 }}
-            animate={{ 
-              scale: isMinimized ? 0.9 : 1, 
-              y: isMinimized ? 200 : 0, 
-              opacity: 1 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) handleToggle();
             }}
-            exit={{ scale: 0.9, y: 40, opacity: 0 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            onClick={(e) => e.stopPropagation()}
           >
-            {isMinimized ? (
-              <div
-                className="p-3 cursor-pointer bg-gradient-to-r from-indigo-600 to-purple-600"
-                onClick={() => setIsMinimized(false)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Volume2 size={18} className="text-white" />
-                    <span className="text-white font-medium">Voice Assistant</span>
-                  </div>
-                  <div className="flex space-x-1">
-                    {renderVisualizerBars()}
-                  </div>
+            <motion.div
+              className="bg-white rounded-lg w-full max-w-md shadow-xl flex flex-col"
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-medium">AI Voice Assistant</h2>
+                  {(isListening || isSpeaking) && (
+                    <VoiceVisualizer 
+                      isActive={true} 
+                      mode={isListening ? 'listening' : 'speaking'} 
+                    />
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleTogglePermanent}
+                    className={`text-sm px-2 py-1 rounded ${
+                      isPermanent ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
+                    }`}
+                    aria-label={isPermanent ? 'Disable permanent mode' : 'Enable permanent mode'}
+                    title={isPermanent ? 'Disable permanent mode' : 'Keep assistant open'}
+                  >
+                    {isPermanent ? 'Pin' : 'Pin'}
+                  </button>
+                  <button
+                    onClick={handleToggle}
+                    className="text-gray-500 hover:text-gray-700"
+                    aria-label="Close"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
               </div>
-            ) : (
-              <>
-                {/* Header */}
-                <div className="border-b border-neutral-800 bg-gradient-to-r from-indigo-600 to-purple-600 p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Volume2 size={18} className="text-white" />
-                      <span className="text-white font-medium">Voice Assistant</span>
-                      
-                      {/* Network status indicator */}
-                      {networkStatus !== 'online' && (
-                        <span className={`
-                          rounded-full h-2 w-2 
-                          ${networkStatus === 'offline' ? 'bg-yellow-500' : 
-                            networkStatus === 'error' ? 'bg-red-500' : 'bg-cyan-500 animate-pulse'}
-                        `}></span>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center space-x-1">
-                      {messages.length > 0 && (
-                        <button
-                          onClick={() => setMessages([])}
-                          className="text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-700 transition-colors"
-                          title="Clear conversation"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
-                        </button>
-                      )}
-                      <button 
-                        onClick={() => setIsMinimized(true)}
-                        className="text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-700 transition-colors"
-                      >
-                        <div className="w-4 h-1 bg-current rounded-full"></div>
-                      </button>
-                      <button 
-                        onClick={onClose}
-                        className="text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-700 transition-colors"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
+
+              {/* Chat area */}
+              <div className="flex-1 overflow-y-auto p-4 bg-gray-50 max-h-[400px] min-h-[300px]">
+                <AnimatePresence>
+                  {networkStatus.error || !networkStatus.online ? (
+                    <NetworkStatusIndicator status={networkStatus} />
+                  ) : null}
+                </AnimatePresence>
                 
-                {/* Chat area */}
-                <div className="p-4 h-80 overflow-y-auto">
-                  {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center">
-                      <motion.div 
-                        className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mb-4"
-                        animate={{ 
-                          scale: showWelcome ? [1, 1.05, 1] : 1,
-                          boxShadow: showWelcome ? [
-                            "0 0 0 0 rgba(166, 152, 254, 0)", 
-                            "0 0 0 15px rgba(166, 152, 254, 0.3)", 
-                            "0 0 0 0 rgba(166, 152, 254, 0)"
-                          ] : "0 0 0 0 rgba(166, 152, 254, 0)"
-                        }}
-                        transition={{ 
-                          repeat: showWelcome ? Infinity : 0, 
-                          duration: 2.5,
-                          repeatType: "loop"
-                        }}
-                      >
-                        <Volume2 size={32} className="text-white" />
-                      </motion.div>
-                      <motion.h4 
-                        className="text-white font-semibold mb-2"
-                        animate={{ 
-                          opacity: showWelcome ? [1, 1] : 1,
-                          y: showWelcome ? [0, 0] : 0
-                        }}
-                      >
-                        Tech Voice Assistant
-                      </motion.h4>
-                      <motion.p 
-                        className="text-neutral-400 text-sm max-w-xs"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ 
-                          opacity: 1, 
-                          y: 0,
-                          transition: { delay: 0.3 }
-                        }}
-                      >
-                        Ask me anything about AI, technology, programming, or the latest tech news.
-                      </motion.p>
-                      
-                      {networkStatus === 'offline' && (
-                        <motion.div 
-                          className="mt-4 p-2 bg-yellow-600/20 border border-yellow-600/40 rounded-md"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ 
-                            opacity: 1, 
-                            y: 0,
-                            transition: { delay: 0.5 }
-                          }}
-                        >
-                          <p className="text-yellow-500 text-xs">
-                            You appear to be offline. Voice assistant will use limited local responses.
-                          </p>
-                        </motion.div>
-                      )}
-                      
-                      {networkStatus === 'error' && (
-                        <motion.div 
-                          className="mt-4 p-2 bg-red-600/20 border border-red-600/40 rounded-md"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ 
-                            opacity: 1, 
-                            y: 0,
-                            transition: { delay: 0.5 }
-                          }}
-                        >
-                          <p className="text-red-500 text-xs">
-                            The voice assistant API is currently unavailable. Using fallback responses.
-                          </p>
-                        </motion.div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {messages.map((message, index) => (
-                        <motion.div 
-                          key={index} 
-                          className={`flex ${
-                            message.type === 'user' 
-                              ? 'justify-end' 
-                              : message.type === 'system' || message.type === 'error'
-                              ? 'justify-center' 
-                              : 'justify-start'
-                          }`}
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          transition={{ 
-                            type: 'spring', 
-                            stiffness: 500, 
-                            damping: 25,
-                            mass: 0.8
-                          }}
-                        >
-                          <div 
-                            className={`rounded-lg px-4 py-2 max-w-[80%] ${
-                              message.type === 'user'
-                                ? 'bg-purple-600 text-white'
-                                : message.type === 'system'
-                                ? 'bg-yellow-600 text-white flex items-center'
-                                : message.type === 'error'
-                                ? 'bg-red-600 text-white flex items-center'
-                                : 'bg-neutral-700 text-white'
-                            }`}
-                          >
-                            {message.type === 'system' && (
-                              <AlertCircle size={16} className="mr-2 flex-shrink-0" />
-                            )}
-                            {message.type === 'error' && (
-                              <AlertCircle size={16} className="mr-2 flex-shrink-0" />
-                            )}
-                            {message.text}
-                          </div>
-                        </motion.div>
-                      ))}
-                      {/* Show typing indicator when processing */}
-                      {isProcessing && (
-                        <motion.div 
-                          className="flex justify-start"
-                          initial={{ opacity: 0, y: 5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                        >
-                          <div className="bg-neutral-700 rounded-lg px-4 py-2 flex items-center space-x-2">
-                            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></div>
-                            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></div>
-                          </div>
-                        </motion.div>
-                      )}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  )}
-                </div>
-                
-                {/* Voice controls */}
-                <div className="p-4 border-t border-neutral-700 bg-neutral-800">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className="flex h-8 items-center">
-                        {renderVisualizerBars()}
-                      </div>
-                      {isProcessing && (
-                        <Loader2 size={18} className="text-cyan-500 animate-spin" />
-                      )}
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      {error && !error.includes("502") && (
-                        <p className="text-red-400 text-sm max-w-[200px] truncate">{error}</p>
-                      )}
-                      <motion.button
-                        onClick={isListening ? stopListening : startListening}
-                        disabled={isProcessing}
-                        className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
-                          isListening
-                            ? 'bg-red-500 hover:bg-red-600'
-                            : isProcessing
-                            ? 'bg-gray-500 cursor-not-allowed'
-                            : 'bg-cyan-500 hover:bg-cyan-600'
-                        }`}
-                        whileHover={{ scale: isProcessing ? 1 : 1.05 }}
-                        whileTap={{ scale: isProcessing ? 1 : 0.95 }}
-                      >
-                        {isListening ? (
-                          <MicOff size={20} className="text-white" />
-                        ) : (
-                          <Mic size={20} className="text-white" />
-                        )}
-                      </motion.button>
-                    </div>
+                {messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 p-4">
+                    <p className="mb-2">How can I help you with technology today?</p>
+                    <p className="text-sm">Try saying "What's new in AI?" or "Tell me about the latest smartphones"</p>
                   </div>
-                  
-                  {isListening && (
-                    <motion.div 
-                      className="mt-3 text-neutral-300 text-sm"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
+                ) : (
+                  <div className="space-y-2">
+                    {messages.map((message) => (
+                      <MessageBubble key={message.id} message={message} />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </div>
+
+              {/* Input area */}
+              <form onSubmit={handleSubmit} className="p-4 border-t flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleMicrophoneClick}
+                  className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+                    isListening
+                      ? 'bg-red-500 text-white animate-pulse'
+                      : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  }`}
+                  aria-label={isListening ? 'Stop listening' : 'Start listening'}
+                >
+                  <Mic size={20} />
+                </button>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Type a message..."
+                  className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  value={textInput}
+                  onChange={(e) => setTextInput(e.target.value)}
+                  disabled={isProcessing}
+                />
+                <button
+                  type="submit"
+                  disabled={!textInput.trim() || isProcessing}
+                  className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-green-100 text-green-600 hover:bg-green-200 disabled:opacity-50 disabled:hover:bg-green-100"
+                  aria-label="Send message"
+                >
+                  <Send size={20} />
+                </button>
+              </form>
+
+              {/* Footer with controls */}
+              <div className="p-2 border-t text-xs text-gray-500 flex justify-between items-center">
+                <div>
+                  {isSpeaking && (
+                    <button
+                      onClick={stopSpeaking}
+                      className="text-red-600 hover:text-red-800 flex items-center gap-1"
                     >
-                      <p>
-                        {transcript || "Listening..."}
-                      </p>
-                    </motion.div>
+                      <MicOff size={14} />
+                      Stop Speaking
+                    </button>
                   )}
                 </div>
-              </>
-            )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={clearMessages}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    Clear Chat
+                  </button>
+                  <button
+                    onClick={newSession}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    New Session
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+    </>
   );
 } 

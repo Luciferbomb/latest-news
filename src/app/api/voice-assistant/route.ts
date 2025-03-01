@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 
 // API keys - in production, these should be in environment variables
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-56e85276385f464c9e229ebdc0702649';
+const HUME_API_KEY = process.env.HUME_API_KEY || 'epagql1TPhg8e1hqHMutK4o1D3wksACU9uodFq4HjGbOlbE4';
+const HUME_CONFIG_ID = process.env.NEXT_PUBLIC_HUME_CONFIG_ID || '6de7c548-a0a2-4d95-b975-1bfd9d245b15';
+const HUME_SECRET_KEY = process.env.HUME_SECRET_KEY || 'MTYVq0wnAaZQQt2hEzJLLUn7sbNqmvkX0GRTuZOx0TzUePJfV1wgpUOB3RouQ8MR';
 
 // Define a type for the voice assistant request
 interface VoiceAssistantRequest {
@@ -17,7 +19,7 @@ interface VoiceAssistantResponse {
   source?: string;
 }
 
-// System prompt for DeepSeek to ensure it responds only to tech questions
+// System prompt for Hume to ensure it responds only to tech questions
 const SYSTEM_PROMPT = `You are a helpful AI assistant specialized in technology topics.
 You should ONLY answer questions related to technology, AI, programming, computers, 
 electronics, software, hardware, and related technical fields.
@@ -79,10 +81,10 @@ function preprocessQuery(query: string): string {
 }
 
 /**
- * Try to get a response from DeepSeek API
+ * Try to get a response from Hume API
  */
-async function getDeepSeekResponse(query: string): Promise<VoiceAssistantResponse | null> {
-  if (!DEEPSEEK_API_KEY) return null;
+async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | null> {
+  if (!HUME_API_KEY || !HUME_CONFIG_ID) return null;
   
   try {
     // Pre-process the query for better results
@@ -106,15 +108,15 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
     
     try {
-      // Use the correct DeepSeek API endpoint and request format
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      // Use the Hume API endpoint
+      const response = await fetch('https://api.hume.ai/v0/playground/chat-completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+          'X-Hume-Api-Key': HUME_API_KEY
         },
         body: JSON.stringify({
-          model: "deepseek-chat",
+          config_id: HUME_CONFIG_ID,
           messages: [
             {
               "role": "system",
@@ -135,26 +137,29 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
       clearTimeout(timeoutId);
       
       if (!response.ok) {
-        console.error(`DeepSeek API error: ${response.status}`);
+        console.error(`Hume API error: ${response.status}`);
         const errorText = await response.text();
         console.error(`Error details: ${errorText}`);
         
         // If there's a 502 error, fall back to our built-in response
         if (response.status === 502) {
-          console.warn('DeepSeek API returned 502 error, falling back to built-in responses');
+          console.warn('Hume API returned 502 error, falling back to built-in responses');
           return generateFallbackResponse(processedQuery);
         }
         
-        throw new Error(`DeepSeek API error: ${response.status}`);
+        throw new Error(`Hume API error: ${response.status}`);
       }
       
       const data = await response.json();
-      // Extract the response using the correct path for this API
-      const answer = data.choices?.[0]?.message?.content;
+      // Extract the response from Hume API format
+      const answer = data.choices?.[0]?.message?.content || 
+                     data.message?.content || 
+                     data.text || 
+                     data.choices?.[0]?.text;
       
       if (!answer) {
-        console.error('Unexpected DeepSeek API response format:', JSON.stringify(data));
-        throw new Error('Empty or invalid response from DeepSeek');
+        console.error('Unexpected Hume API response format:', JSON.stringify(data));
+        throw new Error('Empty or invalid response from Hume');
       }
       
       // Post-process the answer to ensure it's conversational and concise
@@ -164,14 +169,14 @@ async function getDeepSeekResponse(query: string): Promise<VoiceAssistantRespons
         answer: processedAnswer,
         confidence: 0.9,
         isTechQuestion: true,
-        source: "deepseek"
+        source: "hume"
       };
     } catch (error) {
       clearTimeout(timeoutId);
       throw error; // Re-throw for outer catch
     }
   } catch (error) {
-    console.error('Error calling DeepSeek:', error);
+    console.error('Error calling Hume API:', error);
     // Fall back to our built-in response
     return generateFallbackResponse(query);
   }
@@ -326,11 +331,11 @@ export async function POST(request: Request) {
     // Create a promise for the query processing
     const responsePromise = (async () => {
       try {
-        // First try to get a response from DeepSeek
-        const deepSeekResponse = await getDeepSeekResponse(body.query);
+        // First try to get a response from Hume
+        const humeResponse = await getHumeResponse(body.query);
         
         // Store successful response in cache
-        if (deepSeekResponse) {
+        if (humeResponse) {
           // Check if we need to trim the cache
           if (responseCache.size >= MAX_CACHE_SIZE) {
             // Find the least accessed entry
@@ -352,15 +357,15 @@ export async function POST(request: Request) {
           
           // Store in cache
           responseCache.set(normalizedQuery, {
-            response: deepSeekResponse,
+            response: humeResponse,
             timestamp: Date.now(),
             accessCount: 1
           });
           
-          return deepSeekResponse;
+          return humeResponse;
         }
         
-        // Fallback if DeepSeek fails
+        // Fallback if Hume fails
         const fallbackResponse = generateFallbackResponse(body.query);
         responseCache.set(normalizedQuery, {
           response: fallbackResponse,
@@ -442,11 +447,11 @@ export async function GET(request: Request) {
     // Create a promise for the query processing
     const responsePromise = (async () => {
       try {
-        // Try to get a response from DeepSeek first
-        const deepSeekResponse = await getDeepSeekResponse(query);
+        // Try to get a response from Hume first
+        const humeResponse = await getHumeResponse(query);
         
         // Store successful response in cache
-        if (deepSeekResponse) {
+        if (humeResponse) {
           // Check if we need to trim the cache
           if (responseCache.size >= MAX_CACHE_SIZE) {
             // Similar to POST handler - find least accessed entry
@@ -466,15 +471,15 @@ export async function GET(request: Request) {
           }
           
           responseCache.set(normalizedQuery, {
-            response: deepSeekResponse,
+            response: humeResponse,
             timestamp: Date.now(),
             accessCount: 1
           });
           
-          return deepSeekResponse;
+          return humeResponse;
         }
         
-        // Fallback if DeepSeek fails
+        // Fallback if Hume fails
         const fallbackResponse = generateFallbackResponse(query);
         responseCache.set(normalizedQuery, {
           response: fallbackResponse,

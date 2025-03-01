@@ -1,496 +1,586 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-interface UseVoiceAssistantProps {
-  onListening?: (isListening: boolean) => void;
-  onResult?: (result: string) => void;
-  onError?: (error: string) => void;
-  onResponse?: (response: VoiceAssistantResponse) => void;
+export interface VoiceAssistantMessage {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+  type: 'message' | 'thinking' | 'error';
 }
 
-interface VoiceAssistantResponse {
+export interface VoiceAssistantResponse {
   answer: string;
   confidence: number;
   isTechQuestion: boolean;
   source?: string;
 }
 
-export default function useVoiceAssistant({
-  onListening,
-  onResult,
+export interface NetworkStatus {
+  online: boolean;
+  error: string | null;
+  lastChecked: Date | null;
+}
+
+interface UseVoiceAssistantOptions {
+  onProcessingStart?: () => void;
+  onProcessingEnd?: () => void;
+  onResponse?: (response: VoiceAssistantResponse) => void;
+  onError?: (error: Error) => void;
+  onNetworkStatusChange?: (status: NetworkStatus) => void;
+  apiEndpoint?: string;
+  speakResponse?: boolean;
+}
+
+// Function to generate a unique ID
+const generateId = () => `id-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+export function useVoiceAssistant({
+  onProcessingStart,
+  onProcessingEnd,
+  onResponse,
   onError,
-  onResponse
-}: UseVoiceAssistantProps = {}) {
+  onNetworkStatusChange,
+  apiEndpoint = '/api/voice-assistant',
+  speakResponse = true,
+}: UseVoiceAssistantOptions = {}) {
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [finalTranscript, setFinalTranscript] = useState('');
-  const [response, setResponse] = useState<VoiceAssistantResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  
-  // References to hold instances
-  const recognitionRef = useRef<any>(null);
-  const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastQueryRef = useRef<string>('');
-  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const requestIdRef = useRef<string>('');
-  const apiCacheRef = useRef<Map<string, VoiceAssistantResponse>>(new Map());
-  const speakingRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Enhanced speech recognition settings
-  const recognitionSettingsRef = useRef({
-    continuous: false,
-    interimResults: true,
-    maxAlternatives: 3,
-    lang: 'en-US',
+  const [messages, setMessages] = useState<VoiceAssistantMessage[]>([]);
+  const [error, setError] = useState<Error | null>(null);
+  const [networkStatus, setNetworkStatus] = useState<NetworkStatus>({
+    online: navigator.onLine,
+    error: null,
+    lastChecked: new Date()
   });
-  
-  // Initialize speech recognition on component mount
+
+  // Reference to SpeechRecognition
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Reference to SpeechSynthesis
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+  // Reference to abort controller for fetch requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+  // Reference to timeout ID for request timeout
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Reference to session ID for grouped requests
+  const sessionIdRef = useRef<string>(generateId());
+  // Track if component is mounted
+  const mountedRef = useRef<boolean>(true);
+  // Track active API requests
+  const pendingRequestRef = useRef<boolean>(false);
+  // Track animation frames
+  const animationFrameRef = useRef<number | null>(null);
+  // Track request count for debouncing
+  const requestCountRef = useRef<number>(0);
+
+  // Initialize speech recognition and synthesis
   useEffect(() => {
-    // Check if the browser supports the Web Speech API
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      setError('Speech recognition is not supported in this browser');
-      return;
-    }
-    
-    // Initialize the speech recognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognitionRef.current = new SpeechRecognition();
-    
-    // Apply recognition settings
-    const settings = recognitionSettingsRef.current;
-    recognitionRef.current.continuous = settings.continuous;
-    recognitionRef.current.interimResults = settings.interimResults;
-    recognitionRef.current.maxAlternatives = settings.maxAlternatives;
-    recognitionRef.current.lang = settings.lang;
-    
-    // Set up event handlers
-    recognitionRef.current.onstart = () => {
-      setIsListening(true);
-      setTranscript('');
-      setFinalTranscript('');
-      setError(null); // Clear previous errors when starting new session
-      onListening?.(true);
-    };
-    
-    recognitionRef.current.onresult = (event: any) => {
-      try {
-        // Get the most confident result
-        let bestResult = '';
-        let bestConfidence = 0;
+    if (typeof window !== 'undefined') {
+      // Check for browser support and initialize
+      if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = true;
+        recognitionRef.current.interimResults = true;
+        recognitionRef.current.lang = 'en-US';
+      }
+      
+      if ('speechSynthesis' in window) {
+        synthRef.current = window.speechSynthesis;
+      }
+      
+      // Set up network status monitoring
+      const handleOnline = () => {
+        const newStatus = {
+          online: true,
+          error: null,
+          lastChecked: new Date()
+        };
+        setNetworkStatus(newStatus);
+        if (onNetworkStatusChange) onNetworkStatusChange(newStatus);
+      };
+      
+      const handleOffline = () => {
+        const newStatus = {
+          online: false,
+          error: 'Network connection lost',
+          lastChecked: new Date()
+        };
+        setNetworkStatus(newStatus);
+        if (onNetworkStatusChange) onNetworkStatusChange(newStatus);
+      };
+      
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      
+      // Check network connectivity immediately
+      checkNetworkStatus();
+      
+      // Cleanup
+      return () => {
+        mountedRef.current = false;
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
         
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          
-          // If this is a final result, consider all alternatives
-          if (result.isFinal) {
-            for (let j = 0; j < result.length; j++) {
-              if (result[j].confidence > bestConfidence) {
-                bestConfidence = result[j].confidence;
-                bestResult = result[j].transcript;
-              }
-            }
-          } else {
-            // For interim results, just use the first one
-            bestResult = result[0].transcript;
+        // Clean up any ongoing processes
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.stop();
+          } catch (e) {
+            // Ignore errors when stopping recognition
           }
         }
         
-        // Clean up the transcript
-        const cleanResult = bestResult.trim();
+        if (synthRef.current) {
+          synthRef.current.cancel();
+        }
         
-        // Apply smart corrections to common speech recognition errors
-        const correctedResult = applyVoiceCorrections(cleanResult);
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
         
-        setTranscript(correctedResult);
-        onResult?.(correctedResult);
-      } catch (err) {
-        console.error("Error processing speech result:", err);
-      }
-    };
-    
-    recognitionRef.current.onerror = (event: any) => {
-      // Don't report no-speech as an error to the user
-      if (event.error === 'no-speech') {
-        console.log("No speech detected.");
-        return;
-      }
-      
-      const errorMessage = `Speech recognition error: ${event.error}`;
-      console.error(errorMessage);
-      setError(errorMessage);
-      onError?.(errorMessage);
-    };
-    
-    recognitionRef.current.onend = () => {
-      setIsListening(false);
-      onListening?.(false);
-      
-      // If we have a transcript, finalize it and process it
-      if (transcript.trim()) {
-        setFinalTranscript(transcript);
-      }
-    };
-    
-    // Initialize speech synthesis
-    speechSynthesisRef.current = new SpeechSynthesisUtterance();
-    speechSynthesisRef.current.lang = 'en-US';
-    speechSynthesisRef.current.rate = 1.0; // Slightly faster than default
-    speechSynthesisRef.current.pitch = 1.0;
-    
-    speechSynthesisRef.current.onstart = () => {
-      setIsSpeaking(true);
-    };
-    
-    speechSynthesisRef.current.onend = () => {
-      setIsSpeaking(false);
-    };
-    
-    speechSynthesisRef.current.onerror = (event) => {
-      console.error("Speech synthesis error:", event);
-      setIsSpeaking(false);
-      
-      // Retry if synthesis fails
-      if (speakingRetryTimerRef.current) {
-        clearTimeout(speakingRetryTimerRef.current);
-      }
-      
-      speakingRetryTimerRef.current = setTimeout(() => {
-        if (speechSynthesisRef.current && speechSynthesisRef.current.text) {
-          window.speechSynthesis.speak(speechSynthesisRef.current);
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
         }
-      }, 500);
-    };
-    
-    // Load voices when available
-    const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      if (voices.length > 0) {
-        const preferredVoice = selectBestVoice(voices);
-        if (preferredVoice && speechSynthesisRef.current) {
-          speechSynthesisRef.current.voice = preferredVoice;
+        
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
         }
-      }
+      };
+    }
+    
+    return undefined;
+  }, [onNetworkStatusChange]);
+
+  // Function to check network status and API endpoint health
+  const checkNetworkStatus = useCallback(async () => {
+    if (!mountedRef.current) return;
+    
+    const newStatus: NetworkStatus = {
+      online: navigator.onLine,
+      error: null,
+      lastChecked: new Date()
     };
     
-    // Chrome loads voices asynchronously
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-    
-    // Try to load voices immediately too
-    loadVoices();
-    
-    // Cleanup on unmount
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
-      window.speechSynthesis.cancel();
-
-      if (processingTimerRef.current) {
-        clearTimeout(processingTimerRef.current);
-      }
-
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
-      }
-      
-      if (speakingRetryTimerRef.current) {
-        clearTimeout(speakingRetryTimerRef.current);
-      }
-
-      // Abort any in-flight fetch requests
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
-  
-  // Select the best voice for speech synthesis
-  const selectBestVoice = (voices: SpeechSynthesisVoice[]) => {
-    // Order of preference: Premium natural voices > Google voices > other voices
-    const voicePreferenceList = [
-      // Premium voices available on various platforms
-      'Google Premium', 'Google Assistant', 'Daniel', 'Samantha', 'Siri',
-      // Google standard voices
-      'Google US English', 'Google UK English',
-      // Other natural sounding voices by platform
-      'Microsoft David', 'Microsoft Zira', 'Alex'
-    ];
-    
-    // Try to find the preferred voice in order of preference
-    for (const preferredName of voicePreferenceList) {
-      const matchedVoice = voices.find(v => 
-        v.name.includes(preferredName) && v.lang.startsWith('en')
-      );
-      if (matchedVoice) return matchedVoice;
-    }
-    
-    // If no preferred voice found, use any English US voice
-    const englishVoice = voices.find(v => v.lang === 'en-US');
-    if (englishVoice) return englishVoice;
-    
-    // Default to first voice
-    return voices[0];
-  };
-  
-  // Apply smart corrections to common speech recognition errors
-  const applyVoiceCorrections = (text: string): string => {
-    if (!text) return text;
-    
-    // Standardize abbreviations and technical terms
-    let corrected = text
-      .replace(/a i\b/gi, "AI")
-      .replace(/a pi\b/gi, "API")
-      .replace(/u i\b/gi, "UI")
-      .replace(/u x\b/gi, "UX")
-      .replace(/\brest api\b/gi, "REST API")
-      .replace(/\bc plus plus\b/gi, "C++")
-      .replace(/\bJavaScript\b/gi, "JavaScript") // Ensure proper capitalization
-      .replace(/\bpython\b/gi, "Python")
-      .replace(/\breact\b/gi, "React")
-      .replace(/\bangular\b/gi, "Angular")
-      .replace(/\bVue\b/gi, "Vue.js")
-      .replace(/\bnpm\b/gi, "npm")
-      .replace(/\bnode js\b/gi, "Node.js");
-    
-    // Add a period at the end if it's missing
-    if (corrected.length > 10 && !/[.?!]$/.test(corrected)) {
-      corrected += '.';
-    }
-    
-    // Capitalize first letter of sentences
-    corrected = corrected.replace(/(^\s*\w|[.!?]\s*\w)/g, c => c.toUpperCase());
-    
-    return corrected;
-  };
-  
-  // Effect to handle changes to the finalized transcript
-  useEffect(() => {
-    if (finalTranscript && !isListening && !isProcessing) {
-      // Prevent processing the same query twice in a row
-      if (finalTranscript === lastQueryRef.current) {
-        console.log("Skipping duplicate query:", finalTranscript);
-        return;
-      }
-      
-      // Set a processing timeout to avoid indefinite processing
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
-      }
-      
-      processingTimeoutRef.current = setTimeout(() => {
-        if (isProcessing) {
-          console.warn("Processing timeout reached. Resetting state.");
-          setIsProcessing(false);
-          setError("Request timed out. Please try again.");
-          onError?.("Request timed out. Please try again.");
-          
-          // Abort any pending fetch
-          if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-          }
-        }
-      }, 6500); // Reduced timeout to 6.5 seconds for faster response
-      
-      // Update last query and process the new one
-      lastQueryRef.current = finalTranscript;
-      processTranscript(finalTranscript);
-    }
-  }, [finalTranscript, isListening, isProcessing]);
-  
-  // Process the transcript and get a response
-  const processTranscript = useCallback(async (text: string) => {
-    if (!text.trim() || isProcessing) return;
-    
-    // Generate a unique request ID
-    requestIdRef.current = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    
-    // Create a new AbortController for this request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-    
-    setIsProcessing(true);
-    
-    // Check cache first for exact matches
-    const normalizedQuery = text.trim().toLowerCase();
-    const cachedResponse = apiCacheRef.current.get(normalizedQuery);
-    
-    if (cachedResponse) {
-      console.log("Using cached response for:", normalizedQuery);
-      setResponse(cachedResponse);
-      onResponse?.(cachedResponse);
-      speakResponse(cachedResponse.answer);
-      setIsProcessing(false);
-      
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
-        processingTimeoutRef.current = null;
-      }
-      
+    // If we're offline, no need to check API
+    if (!newStatus.online) {
+      setNetworkStatus(newStatus);
+      if (onNetworkStatusChange) onNetworkStatusChange(newStatus);
       return;
     }
     
     try {
-      const response = await fetch('/api/voice-assistant', {
+      // Check API endpoint with a HEAD request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      const response = await fetch(apiEndpoint, { 
+        method: 'HEAD',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        newStatus.error = `API error: ${response.status}`;
+      }
+    } catch (e) {
+      // Only set error if we're online but API is unreachable
+      if (navigator.onLine) {
+        newStatus.error = 'API endpoint unreachable';
+      }
+    }
+    
+    if (mountedRef.current) {
+      setNetworkStatus(newStatus);
+      if (onNetworkStatusChange) onNetworkStatusChange(newStatus);
+    }
+  }, [apiEndpoint, onNetworkStatusChange]);
+
+  // Start listening function
+  const startListening = useCallback(() => {
+    if (!recognitionRef.current) {
+      setError(new Error('Speech recognition not supported'));
+      if (onError) onError(new Error('Speech recognition not supported'));
+      return;
+    }
+    
+    try {
+      recognitionRef.current.start();
+      setIsListening(true);
+      
+      // Clear any previous transcript
+      setMessages(prev => {
+        // If the last message is a user message that's empty, remove it
+        if (prev.length > 0 && prev[prev.length - 1].isUser && prev[prev.length - 1].text === '') {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+      
+      // Add an empty user message that will be updated with transcript
+      setMessages(prev => [
+        ...prev,
+        { 
+          id: generateId(), 
+          text: '', 
+          isUser: true, 
+          timestamp: new Date(),
+          type: 'message'
+        }
+      ]);
+      
+      // Set up recognition event handlers
+      recognitionRef.current.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map(result => result[0].transcript)
+          .join('');
+        
+        // Update the last user message with the transcript
+        setMessages(prev => {
+          const newMessages = [...prev];
+          if (newMessages.length > 0 && newMessages[newMessages.length - 1].isUser) {
+            newMessages[newMessages.length - 1].text = transcript;
+          }
+          return newMessages;
+        });
+      };
+      
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setError(new Error(`Speech recognition error: ${event.error}`));
+        if (onError) onError(new Error(`Speech recognition error: ${event.error}`));
+        setIsListening(false);
+      };
+      
+      recognitionRef.current.onend = () => {
+        if (mountedRef.current) {
+          setIsListening(false);
+          
+          // Get the last message to see if we have content to process
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage && lastMessage.isUser && lastMessage.text.trim()) {
+            // Process the message
+            processQuery(lastMessage.text);
+          }
+        }
+      };
+    } catch (e) {
+      console.error('Error starting speech recognition:', e);
+      setError(e instanceof Error ? e : new Error(String(e)));
+      if (onError) onError(e instanceof Error ? e : new Error(String(e)));
+      setIsListening(false);
+    }
+  }, [messages, onError]);
+
+  // Stop listening function
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.error('Error stopping speech recognition:', e);
+      }
+    }
+    setIsListening(false);
+  }, []);
+
+  // Process query function with debouncing and cancellation
+  const processQuery = useCallback(async (query: string) => {
+    if (!query.trim() || pendingRequestRef.current) return;
+    
+    // Increment the request count for debouncing
+    const currentRequestId = ++requestCountRef.current;
+    
+    // Cancel any previous requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    // Mark that we're processing a request
+    setIsProcessing(true);
+    pendingRequestRef.current = true;
+    if (onProcessingStart) onProcessingStart();
+    
+    // Add a thinking message from the assistant
+    const thinkingMessageId = generateId();
+    setMessages(prev => [
+      ...prev,
+      { 
+        id: thinkingMessageId, 
+        text: 'Thinking...', 
+        isUser: false, 
+        timestamp: new Date(),
+        type: 'thinking'
+      }
+    ]);
+    
+    // Create a new AbortController for this request
+    abortControllerRef.current = new AbortController();
+    
+    // Set a timeout to abort the request if it takes too long
+    timeoutRef.current = setTimeout(() => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // If this is still the current request, update state
+      if (currentRequestId === requestCountRef.current && mountedRef.current) {
+        pendingRequestRef.current = false;
+        setIsProcessing(false);
+        if (onProcessingEnd) onProcessingEnd();
+        
+        // Replace thinking message with error
+        setMessages(prev => prev.map(msg => 
+          msg.id === thinkingMessageId
+            ? { 
+                ...msg, 
+                text: 'Sorry, the request timed out. Please try again.', 
+                type: 'error' 
+              }
+            : msg
+        ));
+        
+        setError(new Error('Request timed out'));
+        if (onError) onError(new Error('Request timed out'));
+      }
+    }, 8000); // 8 second timeout
+    
+    try {
+      const requestId = generateId();
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          query: text.trim(),
-          sessionId: requestIdRef.current
+        body: JSON.stringify({
+          query,
+          sessionId: sessionIdRef.current,
+          requestId // Include unique request ID
         }),
-        signal: abortControllerRef.current.signal
+        signal: abortControllerRef.current.signal,
       });
       
+      // Check if this is still the current request
+      if (currentRequestId !== requestCountRef.current) {
+        return; // A newer request has been made, discard this one
+      }
+      
+      // Clear the timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      
       if (!response.ok) {
-        if (response.status === 502) {
-          // Special handling for 502 errors - these are likely API gateway issues
-          console.error("Received 502 error from voice assistant API");
-          throw new Error("The voice assistant service is currently unavailable (502 error). Using fallback responses.");
-        } else {
-          throw new Error(`Server error: ${response.status}`);
-        }
-      }
-      
-      const data = await response.json();
-      
-      // Check for error response
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      
-      // Cache the response for future use
-      apiCacheRef.current.set(normalizedQuery, data);
-      
-      // Limit cache size to 20 entries
-      if (apiCacheRef.current.size > 20) {
-        const firstKey = apiCacheRef.current.keys().next().value;
-        apiCacheRef.current.delete(firstKey);
-      }
-      
-      setResponse(data);
-      onResponse?.(data);
-      
-      // Speak the response
-      speakResponse(data.answer);
-      
-    } catch (err: any) {
-      // Check if this is an abort error (user cancelled)
-      if (err.name === 'AbortError') {
-        console.log('Request was cancelled');
-        return;
-      }
-      
-      const errorMessage = err.message || 'Failed to process voice command';
-      setError(errorMessage);
-      onError?.(errorMessage);
-      
-      // Provide a fallback response if needed
-      if (errorMessage.includes("502")) {
-        // If it's a 502 error, try to get a fallback response from local storage if possible
-        // or use a generic one
-        const fallbackResponse = {
-          answer: "I'm having trouble connecting to my knowledge base right now. Please try again shortly or check your internet connection.",
-          confidence: 0.5,
-          isTechQuestion: true,
-          source: "fallback_from_client"
-        };
+        let errorMessage = `Server error: ${response.status}`;
         
-        setResponse(fallbackResponse);
-        onResponse?.(fallbackResponse);
-        speakResponse(fallbackResponse.answer);
+        if (response.status === 502) {
+          errorMessage = 'The service is temporarily unavailable. Please try again later.';
+          console.error('502 Bad Gateway error from API');
+          
+          // Update network status
+          const newStatus: NetworkStatus = {
+            online: true,
+            error: '502 Bad Gateway',
+            lastChecked: new Date()
+          };
+          setNetworkStatus(newStatus);
+          if (onNetworkStatusChange) onNetworkStatusChange(newStatus);
+        }
+        
+        // Replace thinking message with error
+        setMessages(prev => prev.map(msg => 
+          msg.id === thinkingMessageId
+            ? { 
+                ...msg, 
+                text: errorMessage, 
+                type: 'error' 
+              }
+            : msg
+        ));
+        
+        const error = new Error(errorMessage);
+        setError(error);
+        if (onError) onError(error);
+      } else {
+        const data: VoiceAssistantResponse = await response.json();
+        
+        // Replace thinking message with actual response
+        setMessages(prev => prev.map(msg => 
+          msg.id === thinkingMessageId
+            ? { 
+                ...msg, 
+                text: data.answer, 
+                type: 'message' 
+              }
+            : msg
+        ));
+        
+        // Speak the response if enabled
+        if (speakResponse && synthRef.current && data.answer) {
+          const utterance = new SpeechSynthesisUtterance(data.answer);
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
+          
+          // Use a more natural voice if available
+          const voices = synthRef.current.getVoices();
+          const preferredVoice = voices.find(voice => 
+            voice.name.includes('Samantha') || 
+            voice.name.includes('Google UK English Female') ||
+            voice.name.includes('Microsoft Zira')
+          );
+          
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+          }
+          
+          utterance.onstart = () => {
+            setIsSpeaking(true);
+          };
+          
+          utterance.onend = () => {
+            if (mountedRef.current) {
+              setIsSpeaking(false);
+            }
+          };
+          
+          utterance.onerror = (event) => {
+            console.error('Speech synthesis error:', event.error);
+            if (mountedRef.current) {
+              setIsSpeaking(false);
+            }
+          };
+          
+          synthRef.current.speak(utterance);
+        }
+        
+        // Call the onResponse callback if provided
+        if (onResponse) onResponse(data);
+      }
+    } catch (e) {
+      // Only handle errors if this is still the current request
+      if (currentRequestId === requestCountRef.current && mountedRef.current) {
+        console.error('Error processing query:', e);
+        
+        let errorMessage = 'An error occurred while processing your request.';
+        
+        // Check if this is an abort error (timeout or user cancellation)
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          errorMessage = 'The request was cancelled.';
+        }
+        
+        // Check if we're offline
+        if (!navigator.onLine) {
+          errorMessage = 'You appear to be offline. Please check your connection and try again.';
+        }
+        
+        // Replace thinking message with error
+        setMessages(prev => prev.map(msg => 
+          msg.id === thinkingMessageId
+            ? { 
+                ...msg, 
+                text: errorMessage, 
+                type: 'error' 
+              }
+            : msg
+        ));
+        
+        setError(e instanceof Error ? e : new Error(String(e)));
+        if (onError) onError(e instanceof Error ? e : new Error(String(e)));
       }
     } finally {
-      setIsProcessing(false);
-      
-      // Clear any timeout
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
-        processingTimeoutRef.current = null;
+      // Check if this is still the current request
+      if (currentRequestId === requestCountRef.current && mountedRef.current) {
+        pendingRequestRef.current = false;
+        setIsProcessing(false);
+        if (onProcessingEnd) onProcessingEnd();
       }
     }
-  }, [onResponse, onError]);
-  
-  // Start listening
-  const startListening = useCallback(() => {
-    if (recognitionRef.current && !isListening) {
-      try {
-        // Cancel any existing speech
-        window.speechSynthesis.cancel();
-        
-        // Clear previous errors
-        setError(null);
-        
-        // Start recognition
-        recognitionRef.current.start();
-      } catch (err: any) {
-        setError(`Failed to start listening: ${err.message}`);
-        onError?.(`Failed to start listening: ${err.message}`);
+  }, [apiEndpoint, onError, onProcessingEnd, onProcessingStart, onResponse, onNetworkStatusChange, speakResponse]);
+
+  // Process query manually (for text input)
+  const submitQuery = useCallback((query: string) => {
+    if (!query.trim()) return;
+    
+    // Add user message
+    setMessages(prev => [
+      ...prev,
+      { 
+        id: generateId(), 
+        text: query, 
+        isUser: true, 
+        timestamp: new Date(),
+        type: 'message'
       }
-    }
-  }, [isListening, onError]);
-  
-  // Stop listening
-  const stopListening = useCallback(() => {
-    if (recognitionRef.current && isListening) {
-      recognitionRef.current.stop();
-    }
-  }, [isListening]);
-  
-  // Speak a response
-  const speakResponse = useCallback((text: string) => {
-    if (!speechSynthesisRef.current) return;
+    ]);
     
-    // Cancel any current speech
-    window.speechSynthesis.cancel();
-    
-    // Set the text to speak
-    speechSynthesisRef.current.text = text;
-    
-    // Apply punctuation-based pauses for more natural speech
-    const processedText = text
-      .replace(/\.\s/g, '... ')  // Longer pause after periods
-      .replace(/\,\s/g, ', ') // Short pause after commas
-      .replace(/\?\s/g, '? ') // Pause after question marks
-      .replace(/\!\s/g, '! '); // Pause after exclamation points
-      
-    speechSynthesisRef.current.text = processedText;
-    
-    // Try to get good voices again if they've loaded since initialization
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = selectBestVoice(voices);
-    
-    if (preferredVoice) {
-      speechSynthesisRef.current.voice = preferredVoice;
+    // Process the query
+    processQuery(query);
+  }, [processQuery]);
+
+  // Cancel current request
+  const cancelRequest = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     
-    // Adjust rate based on content length for more natural delivery
-    if (text.length > 100) {
-      speechSynthesisRef.current.rate = 1.1; // Slightly faster for long content
-    } else {
-      speechSynthesisRef.current.rate = 1.0; // Normal rate for short responses
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
     
-    // Speak the text
-    window.speechSynthesis.speak(speechSynthesisRef.current);
+    pendingRequestRef.current = false;
+    setIsProcessing(false);
+    if (onProcessingEnd) onProcessingEnd();
+    
+    // Remove any thinking messages
+    setMessages(prev => prev.filter(msg => msg.type !== 'thinking'));
+  }, [onProcessingEnd]);
+
+  // Stop speaking
+  const stopSpeaking = useCallback(() => {
+    if (synthRef.current) {
+      synthRef.current.cancel();
+    }
+    setIsSpeaking(false);
   }, []);
-  
+
+  // Clear all messages
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    setError(null);
+    cancelRequest();
+    stopSpeaking();
+  }, [cancelRequest, stopSpeaking]);
+
+  // Create a new session
+  const newSession = useCallback(() => {
+    sessionIdRef.current = generateId();
+    clearMessages();
+  }, [clearMessages]);
+
+  // Return all functions and state
   return {
     isListening,
     isProcessing,
     isSpeaking,
-    transcript,
-    response,
+    messages,
     error,
+    networkStatus,
     startListening,
     stopListening,
-    speakResponse
+    submitQuery,
+    cancelRequest,
+    stopSpeaking,
+    clearMessages,
+    newSession,
+    checkNetworkStatus
   };
 } 

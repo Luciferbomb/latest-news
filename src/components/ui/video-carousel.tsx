@@ -24,6 +24,7 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [iframeError, setIframeError] = useState(false);
+  const [iframeLoading, setIframeLoading] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -40,6 +41,7 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
   const resetPlayState = () => {
     setIsPlaying(false);
     setIframeError(false);
+    setIframeLoading(true);
   };
 
   const togglePlayPause = () => {
@@ -59,10 +61,32 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     }
   };
 
+  // Handle iFrame load success
+  const handleIframeLoad = () => {
+    console.log("Iframe loaded successfully");
+    setIframeLoading(false);
+    setIframeError(false);
+  };
+
   // Handle iFrame errors by showing a fallback
   const handleIframeError = () => {
     console.error("Error loading embedded video");
     setIframeError(true);
+    setIframeLoading(false);
+  };
+
+  // Get optimized embed URL
+  const getEmbedUrl = (embedUrl: string, isPlaying: boolean): string => {
+    // Make sure we're using the correct YouTube embed URL format
+    let url = embedUrl;
+    
+    // Clean up the URL to remove any existing parameters
+    if (url.includes('?')) {
+      url = url.split('?')[0];
+    }
+    
+    // Add parameters that improve iframe reliability
+    return `${url}?autoplay=${isPlaying ? '1' : '0'}&mute=${isPlaying ? '0' : '1'}&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&widgetid=1&rel=0`;
   };
 
   // Auto-advance carousel every 10 seconds if not playing video
@@ -101,14 +125,22 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
       <div className="relative aspect-video w-full">
         {/* Video - use iframe for YouTube videos, fallback to regular video element or image */}
         {currentVideo.embedUrl && !iframeError ? (
-          <iframe
-            ref={iframeRef}
-            src={`${currentVideo.embedUrl}?autoplay=${isPlaying ? 1 : 0}&mute=0`}
-            className="w-full h-full object-cover"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            onError={handleIframeError}
-          />
+          <>
+            {iframeLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+              </div>
+            )}
+            <iframe
+              ref={iframeRef}
+              src={getEmbedUrl(currentVideo.embedUrl, isPlaying)}
+              className="w-full h-full object-cover"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+            />
+          </>
         ) : currentVideo.videoUrl && currentVideo.videoUrl.endsWith('.mp4') ? (
           <video
             ref={videoRef}
@@ -121,7 +153,7 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
             onError={() => console.error("Video error")}
           />
         ) : (
-          // Fallback to just showing the thumbnail if no valid video source
+          // Fallback to just showing the thumbnail if no valid video source or there was an error
           <div className="relative w-full h-full">
             <img 
               src={currentVideo.thumbnailUrl} 
@@ -138,6 +170,11 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
                 <ExternalLink className="h-8 w-8 text-white" />
               </a>
             </div>
+            {iframeError && (
+              <div className="absolute bottom-0 left-0 right-0 bg-red-700/80 text-white text-center text-sm py-1">
+                Could not load embedded video. Click to view on YouTube.
+              </div>
+            )}
           </div>
         )}
 

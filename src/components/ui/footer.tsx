@@ -169,6 +169,9 @@ export function Footer() {
             <p className="text-sm text-white/40">
               © {new Date().getFullYear()} AI News Hub. A product of Quantash Labs Ai™. All rights reserved.
             </p>
+            <p className="text-xs text-white/30 mt-1">
+              Version 1.2.3 | <span className="text-indigo-400/60">Enhanced YouTube Video Support</span>
+            </p>
           </div>
         </div>
       </div>

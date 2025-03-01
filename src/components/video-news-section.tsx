@@ -1,268 +1,176 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { VideoCarousel, VideoItem } from "@/components/ui/video-carousel";
-import { motion } from "framer-motion";
-import { RefreshCw } from "lucide-react";
+import { useState, useEffect, useCallback } from 'react';
+import { VideoCarousel, VideoItem } from './ui/video-carousel';
+import { PanelTop, RefreshCcw } from 'lucide-react';
 
-// Featured AI YouTube channels and their videos
+// Sample videos to display if the API fails
 const SAMPLE_VIDEOS: VideoItem[] = [
   {
-    id: "1",
-    title: "I Tested 10 AI Tools That Will Change Everything",
-    description: "Ripley AI explores the latest AI tools that are revolutionizing productivity and creativity, with hands-on demonstrations and practical use cases.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1677442135136-760c813a1e2a?q=80&w=1932&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4", // Sample video URL - would be YouTube embed in production
-    embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ", // Sample embed URL
-    source: "Ripley AI",
-    date: "Mar 1, 2025",
-    channelUrl: "https://youtube.com/@RipleyAI"
+    id: "sample-1",
+    title: "GPT-4 Turbo: Everything You Need to Know",
+    description: "Learn about OpenAI's latest model GPT-4 Turbo, its capabilities, and how it compares to previous models.",
+    thumbnailUrl: "https://images.unsplash.com/photo-1677442135555-3e0f312a8ebe?w=800&auto=format&fit=crop",
+    videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    source: "AI News",
+    date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
   },
   {
-    id: "2",
-    title: "How to Build an AI SaaS in 1 Hour | Builder Central",
-    description: "Builder Central shows you how to create a complete AI SaaS application in just one hour using the latest development tools and frameworks.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1581093196277-9f608bb3b511?q=80&w=2070&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-10s.mp4", // Sample video URL
-    embedUrl: "https://www.youtube.com/embed/jNQXAC9IVRw", // Sample embed URL
-    source: "Builder Central",
-    date: "Feb 28, 2025",
-    channelUrl: "https://www.youtube.com/@BuildersCentral"
-  },
-  {
-    id: "3",
-    title: "GPT-5 vs Claude 3 vs Gemini 2 | The ULTIMATE AI Model Comparison",
-    description: "A comprehensive comparison of the latest AI language models, testing their capabilities across reasoning, coding, creativity, and factual knowledge.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1633419461186-7d40a38105ec?q=80&w=1780&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-15s.mp4", // Sample video URL
-    embedUrl: "https://www.youtube.com/embed/9bZkp7q19f0", // Sample embed URL
-    source: "AI Explained",
-    date: "Feb 25, 2025",
-    channelUrl: "https://youtube.com/@AIExplained"
-  },
-  {
-    id: "4",
-    title: "How Midjourney v6 is Changing the Art Industry Forever",
-    description: "An in-depth look at how Midjourney's latest version is transforming digital art creation and disrupting traditional creative workflows.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1642427749670-f20e2e76ed8c?q=80&w=2080&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-20s.mp4", // Sample video URL
-    embedUrl: "https://www.youtube.com/embed/kJQP7kiw5Fk", // Sample embed URL
-    source: "Two Minute Papers",
-    date: "Feb 22, 2025",
-    channelUrl: "https://youtube.com/@TwoMinutePapers"
-  },
-  {
-    id: "5",
-    title: "The Dark Side of AI: Privacy Concerns You Need to Know",
-    description: "An investigative look into the privacy implications of modern AI systems and what users should be aware of when using these technologies.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1611273426858-450e7f08d0bf?q=80&w=1770&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-30s.mp4", // Sample video URL
-    source: "AI Ethics with Lex",
-    date: "Feb 20, 2025",
-    channelUrl: "https://youtube.com/@AIEthics"
-  },
-  {
-    id: "6",
-    title: "I Built a Complete AI Agent That Runs My Business",
-    description: "A developer shares how they created an autonomous AI agent system that handles various aspects of their online business operations.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1580894732444-8ecded7900cd?q=80&w=1770&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-15s.mp4", // Sample video URL
-    source: "Matt Wolfe",
-    date: "Feb 18, 2025",
-    channelUrl: "https://youtube.com/@MattWolfe"
-  },
-  {
-    id: "7",
-    title: "The Future of AI: 2025 Predictions from Industry Leaders",
-    description: "Top AI researchers and industry executives share their predictions for how artificial intelligence will evolve in the coming year.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1620063633487-4ced43f0a40d?q=80&w=2070&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-20s.mp4", // Sample video URL
-    source: "Lex Fridman",
-    date: "Feb 15, 2025",
-    channelUrl: "https://youtube.com/@lexfridman"
-  },
-  {
-    id: "8",
-    title: "How to Use AI to 10x Your Productivity | Practical Guide",
-    description: "A practical tutorial on integrating AI tools into your daily workflow to dramatically increase productivity across various professional tasks.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?q=80&w=2070&auto=format&fit=crop",
-    videoUrl: "https://samplelib.com/lib/preview/mp4/sample-10s.mp4", // Sample video URL
-    source: "Ali Abdaal",
-    date: "Feb 12, 2025",
-    channelUrl: "https://youtube.com/@aliabdaal"
+    id: "sample-2",
+    title: "The Rise of Multimodal AI Models",
+    description: "Explore how the latest AI models are combining text, images, and audio for more powerful applications.",
+    thumbnailUrl: "https://images.unsplash.com/photo-1675256484473-ec5c847608f3?w=800&auto=format&fit=crop",
+    videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    source: "Tech Insights",
+    date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
   }
 ];
 
-export default function VideoNewsSection() {
+export function VideoNewsSection() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
-  const fetchVideos = async () => {
+  // Function to fetch videos with improved error handling
+  const fetchVideos = useCallback(async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
     setDebugInfo(null);
     
     try {
-      // Fetch videos from our YouTube API endpoint with a focus on AI tools and image generation
-      const response = await fetch('/api/youtube?q=AI+tools+image+generation+midjourney+stable+diffusion+dall-e&refresh=true');
+      // Using a specific query related to AI tools and image generation
+      const response = await fetch(`/api/youtube?q=ai tools image generation${forceRefresh ? '&refresh=true' : ''}`);
       
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        throw new Error(`API returned ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
-      console.log('YouTube API response:', data); // Log the full response for debugging
       
-      if (data.videos && Array.isArray(data.videos) && data.videos.length > 0) {
-        // Transform the API response to match our VideoItem interface
-        const fetchedVideos = data.videos.map((video: any) => ({
-          id: video.id || `video-${Math.random().toString(36).substr(2, 9)}`,
-          title: video.title || 'Untitled Video',
-          description: video.description || 'No description available',
-          thumbnailUrl: video.thumbnailUrl || 'https://via.placeholder.com/640x360?text=No+Thumbnail',
-          videoUrl: video.videoUrl || '#',
-          embedUrl: video.embedUrl || undefined,
-          source: video.source || 'Unknown Source',
-          date: video.date || 'Unknown Date',
-          channelUrl: video.channelUrl || '#'
-        }));
-        
-        // Check if all required fields are populated
-        const validVideos = fetchedVideos.filter((video: VideoItem) => 
-          video.title && video.description && video.thumbnailUrl && 
-          (video.videoUrl || video.embedUrl)
+      // Log debug information
+      if (data.notice || data.fromCache || data.fromFallback) {
+        setDebugInfo(
+          `${data.notice ? data.notice + ". " : ""}` +
+          `${data.fromCache ? "Using cached data. " : ""}` +
+          `${data.fromFallback ? "Using fallback videos. " : ""}`
         );
-        
-        if (validVideos.length === 0) {
-          setDebugInfo(JSON.stringify(fetchedVideos, null, 2).substring(0, 500) + '...');
-          throw new Error('Received videos but they are missing required fields');
-        }
-        
-        // Filter videos to focus on image generation and AI tools
-        const filteredVideos = validVideos.filter((video: VideoItem) => {
-          const content = `${video.title.toLowerCase()} ${video.description.toLowerCase()}`;
-          const aiKeywords = [
-            'ai', 'artificial intelligence', 'machine learning', 'neural network',
-            'deep learning', 'image generation', 'text-to-image', 'ai tool',
-            'ai art', 'midjourney', 'stable diffusion', 'dall-e', 'ai image',
-            'generated image', 'ai agent', 'chatgpt', 'claude', 'gemini'
-          ];
-          return aiKeywords.some(keyword => content.includes(keyword));
-        });
-        
-        if (filteredVideos.length > 0) {
-          setVideos(filteredVideos);
-          setLastUpdated(new Date());
-        } else {
-          // If no filtered videos, use all valid videos as fallback
-          setVideos(validVideos);
-          setLastUpdated(new Date());
-        }
+      }
+      
+      // Validate that we got actual video data
+      if (!data.videos || !Array.isArray(data.videos) || data.videos.length === 0) {
+        console.warn("No videos returned from API, using sample videos", data);
+        setVideos(SAMPLE_VIDEOS);
       } else {
-        // If no videos were returned, log the response and show an error
-        console.warn('No videos returned from API:', data);
-        setDebugInfo(JSON.stringify(data, null, 2).substring(0, 500) + '...');
+        // Validate and sanitize each video before setting
+        const sanitizedVideos = data.videos
+          .filter((video: any) => 
+            video && video.id && video.title && 
+            (video.videoUrl || video.embedUrl) && 
+            video.thumbnailUrl
+          )
+          .map((video: any): VideoItem => ({
+            id: video.id,
+            title: video.title,
+            description: video.description || "No description available",
+            thumbnailUrl: video.thumbnailUrl,
+            videoUrl: video.videoUrl,
+            embedUrl: video.embedUrl,
+            source: video.source || "Unknown source",
+            date: video.date || new Date().toLocaleDateString(),
+            channelUrl: video.channelUrl
+          }));
         
-        if (data.notice) {
-          setError(`${data.notice}. Please try again later.`);
-        } else if (data.error) {
-          setError(`Error: ${data.error}. Please try again later.`);
+        if (sanitizedVideos.length > 0) {
+          setVideos(sanitizedVideos);
         } else {
-          setError('No videos available. Please try again later.');
-        }
-        
-        // Use sample videos as a fallback if available
-        if (SAMPLE_VIDEOS.length > 0) {
-          console.log('Using sample videos as fallback');
+          console.warn("No valid videos after filtering, using sample videos");
           setVideos(SAMPLE_VIDEOS);
         }
       }
-    } catch (err: any) {
-      console.error('Error fetching videos:', err);
-      setError(`Failed to fetch video content: ${err.message}. Please try again later.`);
       
-      // Use sample videos as a fallback
-      if (SAMPLE_VIDEOS.length > 0) {
-        console.log('Using sample videos as fallback after error');
-        setVideos(SAMPLE_VIDEOS);
+      // Set last updated time
+      if (data.lastUpdated) {
+        const date = new Date(data.lastUpdated);
+        setLastUpdated(date.toLocaleString());
+      } else {
+        setLastUpdated(new Date().toLocaleString());
       }
+      
+    } catch (error) {
+      console.error("Error fetching videos:", error);
+      setError("Failed to load videos. Using sample content instead.");
+      setVideos(SAMPLE_VIDEOS);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Initial fetch
+  }, []);
+  
+  // Fetch videos on component mount
   useEffect(() => {
     fetchVideos();
     
-    // Set up interval to update videos 4 times a day (every 6 hours)
-    const updateInterval = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
-    const interval = setInterval(fetchVideos, updateInterval);
+    // Update every 6 hours
+    const intervalId = setInterval(() => {
+      fetchVideos();
+    }, 6 * 60 * 60 * 1000);
     
-    return () => clearInterval(interval);
-  }, []);
-
+    return () => clearInterval(intervalId);
+  }, [fetchVideos]);
+  
   return (
-    <section className="py-8 md:py-12">
-      <div className="container mx-auto px-4 md:px-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl md:text-3xl font-bold text-white">
-            Latest AI Image Generation Videos
+    <section className="py-10 px-4 bg-black/5 dark:bg-white/5 rounded-xl">
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <PanelTop className="h-5 w-5" />
+            AI Video News
           </h2>
+          <p className="text-muted-foreground mt-1">
+            Latest videos about AI tools and technology
+          </p>
+          {debugInfo && (
+            <p className="text-amber-600 dark:text-amber-400 text-xs mt-1">
+              {debugInfo}
+            </p>
+          )}
+          {error && (
+            <p className="text-red-600 dark:text-red-400 text-xs mt-1">
+              {error}
+            </p>
+          )}
           {lastUpdated && (
-            <div className="flex items-center text-sm text-white/60">
-              <span>Updated {lastUpdated.toLocaleTimeString()}</span>
-              <button 
-                onClick={fetchVideos}
-                className="ml-2 p-1.5 rounded-full hover:bg-white/5 transition-colors"
-                aria-label="Refresh videos"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </button>
-            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Last updated: {lastUpdated}
+            </p>
           )}
         </div>
-
-        {isLoading ? (
-          <div className="aspect-video w-full max-w-5xl mx-auto rounded-xl bg-white/5 animate-pulse" />
-        ) : error ? (
-          <div className="max-w-md mx-auto bg-red-500/10 border border-red-500/20 rounded-lg p-6 text-center">
-            <p className="text-red-400 mb-4">{error}</p>
-            {debugInfo && (
-              <div className="mb-4 overflow-auto max-h-32 bg-black/40 p-2 rounded text-xs text-left">
-                <pre className="text-red-300">{debugInfo}</pre>
-              </div>
-            )}
-            <button 
-              onClick={fetchVideos}
-              className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-md transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
-        ) : videos.length > 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <VideoCarousel videos={videos} />
-          </motion.div>
-        ) : (
-          <div className="aspect-video w-full max-w-5xl mx-auto bg-white/5 rounded-xl flex flex-col items-center justify-center p-6 text-center">
-            <p className="text-white/60 text-xl mb-4">No video content available at this time.</p>
-            <button 
-              onClick={fetchVideos}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Refresh Videos
-            </button>
-          </div>
-        )}
+        <button 
+          onClick={() => fetchVideos(true)}
+          disabled={isLoading}
+          className="mt-2 sm:mt-0 flex items-center gap-1 text-sm px-3 py-1.5 rounded-md 
+                    bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 
+                    transition-colors disabled:opacity-50"
+          aria-label="Refresh videos"
+        >
+          <RefreshCcw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          {isLoading ? 'Loading...' : 'Refresh'}
+        </button>
       </div>
+      
+      {isLoading && videos.length === 0 ? (
+        <div className="w-full aspect-video bg-black/10 dark:bg-white/5 animate-pulse rounded-xl flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading videos...</p>
+          </div>
+        </div>
+      ) : (
+        <VideoCarousel videos={videos} />
+      )}
     </section>
   );
 }

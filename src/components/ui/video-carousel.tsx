@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Play, Pause, ExternalLink } from "lucide-react";
+import { hasValidVideoId } from "@/lib/video-fallbacks";
 
 export interface VideoItem {
   id: string;
@@ -26,6 +27,7 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [iframeError, setIframeError] = useState(false);
   const [iframeLoading, setIframeLoading] = useState(true);
+  const [thumbnailError, setThumbnailError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -43,10 +45,11 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     setIsPlaying(false);
     setIframeError(false);
     setIframeLoading(true);
+    setThumbnailError(false);
   };
 
   const togglePlayPause = () => {
-    if (currentVideo.embedUrl && !iframeError) {
+    if (isValidYouTubeVideo(currentVideo) && !iframeError) {
       // For YouTube videos, we just toggle the state and the iframe src will update
       setIsPlaying(!isPlaying);
     } else if (videoRef.current) {
@@ -76,7 +79,17 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     setIframeLoading(false);
   };
 
-  // Get optimized embed URL
+  // Check if it's a valid YouTube video
+  const isValidYouTubeVideo = (video: VideoItem): boolean => {
+    return (
+      !!video.id && 
+      hasValidVideoId(video.id) && 
+      !!video.embedUrl && 
+      video.embedUrl.includes('youtube.com/embed/')
+    );
+  };
+
+  // Get optimized embed URL with safeguards
   const getEmbedUrl = (embedUrl: string, isPlaying: boolean): string => {
     if (!embedUrl || typeof embedUrl !== 'string') {
       console.warn('Invalid embed URL:', embedUrl);
@@ -122,7 +135,13 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
       
       // If no video ID could be extracted, return empty string
       if (!videoId) {
+        console.error("Could not extract video ID from URL:", embedUrl);
         return '';
+      }
+      
+      // Verify the ID is in our list of known good IDs
+      if (!hasValidVideoId(videoId)) {
+        console.warn("Video ID not in list of verified IDs:", videoId);
       }
       
       // Build the final embed URL with necessary parameters
@@ -175,11 +194,14 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     return null;
   }
 
+  // Check if this is a valid YouTube video that should work
+  const hasValidEmbed = isValidYouTubeVideo(currentVideo);
+
   return (
     <div className="relative w-full max-w-5xl mx-auto overflow-hidden rounded-xl bg-black">
       <div className="relative aspect-video w-full">
-        {/* Video - use iframe for YouTube videos, fallback to regular video element or image */}
-        {currentVideo.embedUrl && !iframeError ? (
+        {/* Video - use iframe for YouTube videos, fallback to regular video or image */}
+        {hasValidEmbed && !iframeError ? (
           <>
             {iframeLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black">
@@ -188,7 +210,7 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
             )}
             <iframe
               ref={iframeRef}
-              src={getEmbedUrl(currentVideo.embedUrl, isPlaying)}
+              src={getEmbedUrl(currentVideo.embedUrl!, isPlaying)}
               className="w-full h-full object-cover"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
@@ -199,7 +221,7 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
               loading="lazy"
             />
           </>
-        ) : currentVideo.videoUrl && currentVideo.videoUrl.endsWith('.mp4') ? (
+        ) : currentVideo.videoUrl?.endsWith('.mp4') ? (
           <video
             ref={videoRef}
             src={currentVideo.videoUrl}
@@ -211,18 +233,29 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
             onError={() => console.error("Video error")}
           />
         ) : (
-          // Fallback to just showing the thumbnail if no valid video source or there was an error
+          // Fallback to just showing the thumbnail with a link to YouTube
           <div className="relative w-full h-full bg-black">
-            <img 
-              src={currentVideo.thumbnailUrl} 
-              alt={currentVideo.title}
-              className="w-full h-full object-cover"
-              loading="lazy"
-              onError={(e) => {
-                console.error("Image loading error");
-                (e.target as HTMLImageElement).src = "https://placehold.co/600x400/000000/FFFFFF?text=Video+Unavailable";
-              }}
-            />
+            {thumbnailError ? (
+              // Show a placeholder when thumbnail fails to load
+              <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                <div className="text-white text-center p-4">
+                  <div className="text-4xl mb-2">📺</div>
+                  <div className="text-xl font-semibold">{currentVideo.title}</div>
+                  <div className="text-sm text-gray-400 mt-2">Video preview unavailable</div>
+                </div>
+              </div>
+            ) : (
+              <img 
+                src={currentVideo.thumbnailUrl} 
+                alt={currentVideo.title}
+                className="w-full h-full object-cover"
+                loading="lazy"
+                onError={(e) => {
+                  console.error("Image loading error for thumbnail:", currentVideo.thumbnailUrl);
+                  setThumbnailError(true);
+                }}
+              />
+            )}
             <div className="absolute inset-0 flex items-center justify-center">
               <a 
                 href={currentVideo.videoUrl} 
@@ -235,7 +268,10 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
             </div>
             {iframeError ? (
               <div className="absolute bottom-0 left-0 right-0 bg-red-700/80 text-white text-center text-sm py-1">
-                {currentVideo.fromFallback ? "Using sample video data. YouTube API needs configuration." : "Could not load embedded video. Click to view on YouTube."}
+                {currentVideo.fromFallback ? 
+                  "Using sample video data. YouTube API needs configuration." : 
+                  "Could not load embedded video. Click to view on YouTube."
+                }
               </div>
             ) : (
               <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-center text-sm py-1">
@@ -267,8 +303,7 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
                 <span>•</span>
                 <span>{currentVideo.date}</span>
               </div>
-              {(currentVideo.embedUrl && !iframeError) || 
-               (currentVideo.videoUrl && currentVideo.videoUrl.endsWith('.mp4')) ? (
+              {hasValidEmbed && !iframeError ? (
                 <button
                   onClick={togglePlayPause}
                   className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"

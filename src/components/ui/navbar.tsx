@@ -69,6 +69,18 @@ export function Navbar() {
               Latest News
             </Link>
             <Link
+              href="/blog"
+              className="text-white/80 hover:text-white transition-colors"
+            >
+              Blog
+            </Link>
+            <Link
+              href="/job-impact"
+              className="text-white/80 hover:text-white transition-colors"
+            >
+              Job Impact
+            </Link>
+            <Link
               href="/categories"
               className="text-white/80 hover:text-white transition-colors"
             >
@@ -146,6 +158,20 @@ export function Navbar() {
                   onClick={() => setIsMenuOpen(false)}
                 >
                   Latest News
+                </Link>
+                <Link
+                  href="/blog"
+                  className="text-white/80 hover:text-white transition-colors py-2"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Blog
+                </Link>
+                <Link
+                  href="/job-impact"
+                  className="text-white/80 hover:text-white transition-colors py-2"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Job Impact
                 </Link>
                 <Link
                   href="/categories"

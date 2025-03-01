@@ -2,6 +2,7 @@ import { DemoHeroGeometric } from "@/components/demo-hero-geometric";
 import { NewsFeed } from "@/components/news-feed";
 import { VideoNewsSection } from "@/components/video-news-section";
 import { AIImageGallery } from "@/components/ai-image-gallery";
+import { JobImpactPromo } from "@/components/job-impact-promo";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -21,6 +22,14 @@ export default function Home() {
           <div>
             <AIImageGallery query="artificial intelligence news visualization" />
           </div>
+        </div>
+        
+        {/* AI Job Impact Calculator Promo */}
+        <div className="mt-16 mb-12">
+          <h2 className="text-2xl md:text-3xl font-bold text-white mb-6">
+            Explore AI's Impact on Jobs
+          </h2>
+          <JobImpactPromo />
         </div>
       </div>
       <NewsFeed />

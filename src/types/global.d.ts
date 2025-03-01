@@ -55,4 +55,23 @@ declare var SpeechRecognition: {
 declare var webkitSpeechRecognition: {
   prototype: SpeechRecognition;
   new(): SpeechRecognition;
-}; 
+};
+
+// Blog interfaces
+interface BlogPost {
+  id: string;
+  title: string;
+  content: string;
+  excerpt: string;
+  author: string;
+  publishedDate: string;
+  updatedDate?: string;
+  imageUrl: string;
+  tags: string[];
+  slug: string;
+}
+
+interface BlogResponse {
+  posts: BlogPost[];
+  lastUpdated: string;
+} 

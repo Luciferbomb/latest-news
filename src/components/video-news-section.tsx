@@ -3,174 +3,137 @@
 import { useState, useEffect, useCallback } from 'react';
 import { VideoCarousel, VideoItem } from './ui/video-carousel';
 import { PanelTop, RefreshCcw } from 'lucide-react';
-
-// Sample videos to display if the API fails
-const SAMPLE_VIDEOS: VideoItem[] = [
-  {
-    id: "sample-1",
-    title: "GPT-4 Turbo: Everything You Need to Know",
-    description: "Learn about OpenAI's latest model GPT-4 Turbo, its capabilities, and how it compares to previous models.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1677442135555-3e0f312a8ebe?w=800&auto=format&fit=crop",
-    videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    source: "AI News",
-    date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-  },
-  {
-    id: "sample-2",
-    title: "The Rise of Multimodal AI Models",
-    description: "Explore how the latest AI models are combining text, images, and audio for more powerful applications.",
-    thumbnailUrl: "https://images.unsplash.com/photo-1675256484473-ec5c847608f3?w=800&auto=format&fit=crop",
-    videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    embedUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    source: "Tech Insights",
-    date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-  }
-];
+import { getFallbackVideos, hasValidVideoId } from '@/lib/video-fallbacks';
 
 export function VideoNewsSection() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // Function to fetch videos with improved error handling
-  const fetchVideos = useCallback(async (forceRefresh = false) => {
-    setIsLoading(true);
-    setError(null);
-    setDebugInfo(null);
-    
+  // Function to validate if a video has a valid embedUrl and ID
+  const isValidVideo = (video: VideoItem): boolean => {
+    return (
+      !!video.id && 
+      hasValidVideoId(video.id) &&
+      !!video.title && 
+      !!video.thumbnailUrl
+    );
+  };
+
+  const fetchVideos = useCallback(async () => {
     try {
-      // Using a specific query related to AI tools and image generation
-      const response = await fetch(`/api/youtube?q=ai tools image generation${forceRefresh ? '&refresh=true' : ''}`);
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch('/api/youtube?refresh=true');
       
       if (!response.ok) {
-        throw new Error(`API returned ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch videos: ${response.status}`);
       }
       
       const data = await response.json();
       
-      // Log debug information
-      if (data.notice || data.fromCache || data.fromFallback) {
-        setDebugInfo(
-          `${data.notice ? data.notice + ". " : ""}` +
-          `${data.fromCache ? "Using cached data. " : ""}` +
-          `${data.fromFallback ? "Using fallback videos. " : ""}`
-        );
-      }
+      // Validate videos to make sure they have required properties and valid IDs
+      const validVideos = data.videos.filter(isValidVideo);
       
-      // Validate that we got actual video data
-      if (!data.videos || !Array.isArray(data.videos) || data.videos.length === 0) {
-        console.warn("No videos returned from API, using sample videos", data);
-        setVideos(SAMPLE_VIDEOS);
+      // If we have no valid videos from the API, use our fallback videos
+      if (validVideos.length === 0) {
+        console.warn('No valid videos received from API, using fallbacks');
+        setVideos(getFallbackVideos());
       } else {
-        // Validate and sanitize each video before setting
-        const sanitizedVideos = data.videos
-          .filter((video: any) => 
-            video && video.id && video.title && 
-            (video.videoUrl || video.embedUrl) && 
-            video.thumbnailUrl
-          )
-          .map((video: any): VideoItem => ({
-            id: video.id,
-            title: video.title,
-            description: video.description || "No description available",
-            thumbnailUrl: video.thumbnailUrl,
-            videoUrl: video.videoUrl,
-            embedUrl: video.embedUrl,
-            source: video.source || "Unknown source",
-            date: video.date || new Date().toLocaleDateString(),
-            channelUrl: video.channelUrl
-          }));
-        
-        if (sanitizedVideos.length > 0) {
-          setVideos(sanitizedVideos);
-        } else {
-          console.warn("No valid videos after filtering, using sample videos");
-          setVideos(SAMPLE_VIDEOS);
-        }
+        setVideos(validVideos);
       }
       
-      // Set last updated time
       if (data.lastUpdated) {
-        const date = new Date(data.lastUpdated);
-        setLastUpdated(date.toLocaleString());
-      } else {
-        setLastUpdated(new Date().toLocaleString());
+        setLastUpdated(new Date(data.lastUpdated));
       }
       
-    } catch (error) {
-      console.error("Error fetching videos:", error);
-      setError("Failed to load videos. Using sample content instead.");
-      setVideos(SAMPLE_VIDEOS);
+      if (data.notice) {
+        console.info('Video API Notice:', data.notice);
+      }
+      
+    } catch (err) {
+      console.error('Error fetching videos:', err);
+      setError('Failed to load videos. Using fallback content.');
+      // Use fallback videos
+      setVideos(getFallbackVideos());
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }, []);
-  
-  // Fetch videos on component mount
+
   useEffect(() => {
     fetchVideos();
     
-    // Update every 6 hours
-    const intervalId = setInterval(() => {
-      fetchVideos();
-    }, 6 * 60 * 60 * 1000);
-    
-    return () => clearInterval(intervalId);
+    // Auto-refresh every 6 hours
+    const interval = setInterval(fetchVideos, 6 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [fetchVideos]);
-  
+
   return (
-    <section className="py-10 px-4 bg-black/5 dark:bg-white/5 rounded-xl">
-      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <PanelTop className="h-5 w-5" />
-            AI Video News
-          </h2>
-          <p className="text-muted-foreground mt-1">
-            Latest videos about AI tools and technology
-          </p>
-          {debugInfo && (
-            <p className="text-amber-600 dark:text-amber-400 text-xs mt-1">
-              {debugInfo}
+    <section className="pt-8 pb-12">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+          <div>
+            <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">
+              Featured AI Video Content
+            </h2>
+            <p className="text-white/60">
+              Watch the latest videos on AI tools and technologies
             </p>
-          )}
-          {error && (
-            <p className="text-red-600 dark:text-red-400 text-xs mt-1">
-              {error}
-            </p>
-          )}
-          {lastUpdated && (
-            <p className="text-xs text-muted-foreground mt-1">
-              Last updated: {lastUpdated}
-            </p>
-          )}
-        </div>
-        <button 
-          onClick={() => fetchVideos(true)}
-          disabled={isLoading}
-          className="mt-2 sm:mt-0 flex items-center gap-1 text-sm px-3 py-1.5 rounded-md 
-                    bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 
-                    transition-colors disabled:opacity-50"
-          aria-label="Refresh videos"
-        >
-          <RefreshCcw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          {isLoading ? 'Loading...' : 'Refresh'}
-        </button>
-      </div>
-      
-      {isLoading && videos.length === 0 ? (
-        <div className="w-full aspect-video bg-black/10 dark:bg-white/5 animate-pulse rounded-xl flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading videos...</p>
+          </div>
+          
+          <div className="flex items-center mt-4 md:mt-0">
+            {lastUpdated && (
+              <span className="text-white/50 text-sm mr-4">
+                Updated: {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            <button
+              onClick={fetchVideos}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/15 rounded-lg text-white/80 text-sm transition-colors disabled:opacity-50"
+              title="Refresh videos"
+            >
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
           </div>
         </div>
-      ) : (
-        <VideoCarousel videos={videos} />
-      )}
+
+        {loading ? (
+          <div className="aspect-video w-full bg-black/30 animate-pulse rounded-xl"></div>
+        ) : error ? (
+          <div className="aspect-video w-full bg-black/30 rounded-xl flex items-center justify-center flex-col p-6">
+            <PanelTop className="h-10 w-10 text-red-400 mb-4" />
+            <h3 className="text-white text-xl mb-2">Failed to load videos from API</h3>
+            <p className="text-white/60 mb-4 text-center">{error}</p>
+            <button
+              onClick={fetchVideos}
+              className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-lg transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : videos.length > 0 ? (
+          <VideoCarousel videos={videos} />
+        ) : (
+          <div className="aspect-video w-full bg-black/30 rounded-xl flex items-center justify-center flex-col p-6">
+            <PanelTop className="h-10 w-10 text-white/50 mb-4" />
+            <h3 className="text-white text-xl mb-2">No videos available</h3>
+            <p className="text-white/60 mb-4 text-center">
+              There are no videos to display at the moment.
+            </p>
+            <button
+              onClick={fetchVideos}
+              className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-lg transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

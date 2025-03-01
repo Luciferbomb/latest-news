@@ -36,6 +36,16 @@ export default function useVoiceAssistant({
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef<string>('');
+  const apiCacheRef = useRef<Map<string, VoiceAssistantResponse>>(new Map());
+  const speakingRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Enhanced speech recognition settings
+  const recognitionSettingsRef = useRef({
+    continuous: false,
+    interimResults: true,
+    maxAlternatives: 3,
+    lang: 'en-US',
+  });
   
   // Initialize speech recognition on component mount
   useEffect(() => {
@@ -48,30 +58,68 @@ export default function useVoiceAssistant({
     // Initialize the speech recognition
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognitionRef.current = new SpeechRecognition();
-    recognitionRef.current.continuous = false;
-    recognitionRef.current.interimResults = true;
-    recognitionRef.current.lang = 'en-US';
+    
+    // Apply recognition settings
+    const settings = recognitionSettingsRef.current;
+    recognitionRef.current.continuous = settings.continuous;
+    recognitionRef.current.interimResults = settings.interimResults;
+    recognitionRef.current.maxAlternatives = settings.maxAlternatives;
+    recognitionRef.current.lang = settings.lang;
     
     // Set up event handlers
     recognitionRef.current.onstart = () => {
       setIsListening(true);
       setTranscript('');
       setFinalTranscript('');
+      setError(null); // Clear previous errors when starting new session
       onListening?.(true);
     };
     
     recognitionRef.current.onresult = (event: any) => {
-      const result = Array.from(event.results)
-        .map((result: any) => result[0])
-        .map((result: any) => result.transcript)
-        .join('');
-      
-      setTranscript(result);
-      onResult?.(result);
+      try {
+        // Get the most confident result
+        let bestResult = '';
+        let bestConfidence = 0;
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          
+          // If this is a final result, consider all alternatives
+          if (result.isFinal) {
+            for (let j = 0; j < result.length; j++) {
+              if (result[j].confidence > bestConfidence) {
+                bestConfidence = result[j].confidence;
+                bestResult = result[j].transcript;
+              }
+            }
+          } else {
+            // For interim results, just use the first one
+            bestResult = result[0].transcript;
+          }
+        }
+        
+        // Clean up the transcript
+        const cleanResult = bestResult.trim();
+        
+        // Apply smart corrections to common speech recognition errors
+        const correctedResult = applyVoiceCorrections(cleanResult);
+        
+        setTranscript(correctedResult);
+        onResult?.(correctedResult);
+      } catch (err) {
+        console.error("Error processing speech result:", err);
+      }
     };
     
     recognitionRef.current.onerror = (event: any) => {
+      // Don't report no-speech as an error to the user
+      if (event.error === 'no-speech') {
+        console.log("No speech detected.");
+        return;
+      }
+      
       const errorMessage = `Speech recognition error: ${event.error}`;
+      console.error(errorMessage);
       setError(errorMessage);
       onError?.(errorMessage);
     };
@@ -89,6 +137,8 @@ export default function useVoiceAssistant({
     // Initialize speech synthesis
     speechSynthesisRef.current = new SpeechSynthesisUtterance();
     speechSynthesisRef.current.lang = 'en-US';
+    speechSynthesisRef.current.rate = 1.0; // Slightly faster than default
+    speechSynthesisRef.current.pitch = 1.0;
     
     speechSynthesisRef.current.onstart = () => {
       setIsSpeaking(true);
@@ -97,6 +147,41 @@ export default function useVoiceAssistant({
     speechSynthesisRef.current.onend = () => {
       setIsSpeaking(false);
     };
+    
+    speechSynthesisRef.current.onerror = (event) => {
+      console.error("Speech synthesis error:", event);
+      setIsSpeaking(false);
+      
+      // Retry if synthesis fails
+      if (speakingRetryTimerRef.current) {
+        clearTimeout(speakingRetryTimerRef.current);
+      }
+      
+      speakingRetryTimerRef.current = setTimeout(() => {
+        if (speechSynthesisRef.current && speechSynthesisRef.current.text) {
+          window.speechSynthesis.speak(speechSynthesisRef.current);
+        }
+      }, 500);
+    };
+    
+    // Load voices when available
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        const preferredVoice = selectBestVoice(voices);
+        if (preferredVoice && speechSynthesisRef.current) {
+          speechSynthesisRef.current.voice = preferredVoice;
+        }
+      }
+    };
+    
+    // Chrome loads voices asynchronously
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    
+    // Try to load voices immediately too
+    loadVoices();
     
     // Cleanup on unmount
     return () => {
@@ -112,6 +197,10 @@ export default function useVoiceAssistant({
       if (processingTimeoutRef.current) {
         clearTimeout(processingTimeoutRef.current);
       }
+      
+      if (speakingRetryTimerRef.current) {
+        clearTimeout(speakingRetryTimerRef.current);
+      }
 
       // Abort any in-flight fetch requests
       if (abortControllerRef.current) {
@@ -119,6 +208,65 @@ export default function useVoiceAssistant({
       }
     };
   }, []);
+  
+  // Select the best voice for speech synthesis
+  const selectBestVoice = (voices: SpeechSynthesisVoice[]) => {
+    // Order of preference: Premium natural voices > Google voices > other voices
+    const voicePreferenceList = [
+      // Premium voices available on various platforms
+      'Google Premium', 'Google Assistant', 'Daniel', 'Samantha', 'Siri',
+      // Google standard voices
+      'Google US English', 'Google UK English',
+      // Other natural sounding voices by platform
+      'Microsoft David', 'Microsoft Zira', 'Alex'
+    ];
+    
+    // Try to find the preferred voice in order of preference
+    for (const preferredName of voicePreferenceList) {
+      const matchedVoice = voices.find(v => 
+        v.name.includes(preferredName) && v.lang.startsWith('en')
+      );
+      if (matchedVoice) return matchedVoice;
+    }
+    
+    // If no preferred voice found, use any English US voice
+    const englishVoice = voices.find(v => v.lang === 'en-US');
+    if (englishVoice) return englishVoice;
+    
+    // Default to first voice
+    return voices[0];
+  };
+  
+  // Apply smart corrections to common speech recognition errors
+  const applyVoiceCorrections = (text: string): string => {
+    if (!text) return text;
+    
+    // Standardize abbreviations and technical terms
+    let corrected = text
+      .replace(/a i\b/gi, "AI")
+      .replace(/a pi\b/gi, "API")
+      .replace(/u i\b/gi, "UI")
+      .replace(/u x\b/gi, "UX")
+      .replace(/\brest api\b/gi, "REST API")
+      .replace(/\bc plus plus\b/gi, "C++")
+      .replace(/\bJavaScript\b/gi, "JavaScript") // Ensure proper capitalization
+      .replace(/\bpython\b/gi, "Python")
+      .replace(/\breact\b/gi, "React")
+      .replace(/\bangular\b/gi, "Angular")
+      .replace(/\bVue\b/gi, "Vue.js")
+      .replace(/\bnpm\b/gi, "npm")
+      .replace(/\bnode js\b/gi, "Node.js");
+    
+    // Add a period at the end if it's missing
+    if (corrected.length > 10 && !/[.?!]$/.test(corrected)) {
+      corrected += '.';
+    }
+    
+    // Capitalize first letter of sentences
+    corrected = corrected.replace(/(^\s*\w|[.!?]\s*\w)/g, c => c.toUpperCase());
+    
+    return corrected;
+  };
   
   // Effect to handle changes to the finalized transcript
   useEffect(() => {
@@ -146,7 +294,7 @@ export default function useVoiceAssistant({
             abortControllerRef.current.abort();
           }
         }
-      }, 8000); // 8 second timeout
+      }, 6500); // Reduced timeout to 6.5 seconds for faster response
       
       // Update last query and process the new one
       lastQueryRef.current = finalTranscript;
@@ -168,6 +316,25 @@ export default function useVoiceAssistant({
     abortControllerRef.current = new AbortController();
     
     setIsProcessing(true);
+    
+    // Check cache first for exact matches
+    const normalizedQuery = text.trim().toLowerCase();
+    const cachedResponse = apiCacheRef.current.get(normalizedQuery);
+    
+    if (cachedResponse) {
+      console.log("Using cached response for:", normalizedQuery);
+      setResponse(cachedResponse);
+      onResponse?.(cachedResponse);
+      speakResponse(cachedResponse.answer);
+      setIsProcessing(false);
+      
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+        processingTimeoutRef.current = null;
+      }
+      
+      return;
+    }
     
     try {
       const response = await fetch('/api/voice-assistant', {
@@ -197,6 +364,15 @@ export default function useVoiceAssistant({
       // Check for error response
       if (data.error) {
         throw new Error(data.error);
+      }
+      
+      // Cache the response for future use
+      apiCacheRef.current.set(normalizedQuery, data);
+      
+      // Limit cache size to 20 entries
+      if (apiCacheRef.current.size > 20) {
+        const firstKey = apiCacheRef.current.keys().next().value;
+        apiCacheRef.current.delete(firstKey);
       }
       
       setResponse(data);
@@ -278,14 +454,28 @@ export default function useVoiceAssistant({
     // Set the text to speak
     speechSynthesisRef.current.text = text;
     
-    // Use a more natural voice if available
+    // Apply punctuation-based pauses for more natural speech
+    const processedText = text
+      .replace(/\.\s/g, '... ')  // Longer pause after periods
+      .replace(/\,\s/g, ', ') // Short pause after commas
+      .replace(/\?\s/g, '? ') // Pause after question marks
+      .replace(/\!\s/g, '! '); // Pause after exclamation points
+      
+    speechSynthesisRef.current.text = processedText;
+    
+    // Try to get good voices again if they've loaded since initialization
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(voice => 
-      voice.name.includes('Google') || voice.name.includes('Natural') || 
-      voice.name.includes('Samantha') || voice.name.includes('Alex'));
+    const preferredVoice = selectBestVoice(voices);
     
     if (preferredVoice) {
       speechSynthesisRef.current.voice = preferredVoice;
+    }
+    
+    // Adjust rate based on content length for more natural delivery
+    if (text.length > 100) {
+      speechSynthesisRef.current.rate = 1.1; // Slightly faster for long content
+    } else {
+      speechSynthesisRef.current.rate = 1.0; // Normal rate for short responses
     }
     
     // Speak the text

@@ -1,0 +1,18 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/api/combined-news/route": "/api/combined-news",
+  "/api/image-generation/route": "/api/image-generation",
+  "/api/newscatcher/route": "/api/newscatcher",
+  "/api/serpapi/route": "/api/serpapi",
+  "/api/news-update/route": "/api/news-update",
+  "/api/rss/route": "/api/rss",
+  "/api/youtube/route": "/api/youtube",
+  "/sitemap.xml/route": "/sitemap.xml",
+  "/favicon.ico/route": "/favicon.ico",
+  "/robots.txt/route": "/robots.txt",
+  "/api/text-analysis/route": "/api/text-analysis",
+  "/search/page": "/search",
+  "/categories/page": "/categories",
+  "/about/page": "/about",
+  "/page": "/"
+}

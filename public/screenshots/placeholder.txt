@@ -1,0 +1,7 @@
+For PWA Builder, you'll need to replace these placeholder files with actual screenshots of your app:
+
+1. screenshot1.png (1280x720) - Desktop view of the home screen
+2. screenshot2.png (1280x720) - Desktop view of the news feed
+3. screenshot-mobile1.png (750x1334) - Mobile view of the app
+
+These screenshots are important for app stores when you package your PWA for iOS and Android.

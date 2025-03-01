@@ -1,6 +1,6 @@
 import { DemoHeroGeometric } from "@/components/demo-hero-geometric";
 import { NewsFeed } from "@/components/news-feed";
-import VideoNewsSection from "@/components/video-news-section";
+import { VideoNewsSection } from "@/components/video-news-section";
 import { AIImageGallery } from "@/components/ai-image-gallery";
 import { Metadata } from "next";
 

@@ -108,15 +108,15 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
     
     try {
-      // Use the Hume API endpoint
-      const response = await fetch('https://api.hume.ai/v0/playground/chat-completions', {
+      // Use the correct Hume API endpoint
+      const response = await fetch('https://api.hume.ai/v0/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Hume-Api-Key': HUME_API_KEY
         },
         body: JSON.stringify({
-          config_id: HUME_CONFIG_ID,
+          model: "hume-chat-ai-v2-beta",  // Specify the model explicitly
           messages: [
             {
               "role": "system",
@@ -520,4 +520,15 @@ export async function GET(request: Request) {
     
     return NextResponse.json(fallbackResponse, { status: 200 });
   }
+}
+
+// Add a HEAD method handler to fix the 400 error
+export async function HEAD(request: Request) {
+  // Return a simple 200 response for HEAD requests
+  return new Response(null, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
 } 

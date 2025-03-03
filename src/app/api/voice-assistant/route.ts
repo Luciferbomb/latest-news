@@ -93,6 +93,8 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
   }
   
   try {
+    console.log("Attempting to call Hume API with query:", query);
+    
     // Use the correct chat completions API endpoint
     const response = await fetch('https://api.hume.ai/v0/chat/completions', {
       method: 'POST',
@@ -114,17 +116,68 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
         ],
         temperature: 0.7,
         max_tokens: 256
-      })
+      }),
+      cache: 'no-store' // Ensure we don't get cached responses
     });
 
     if (!response.ok) {
       console.error(`Hume API Error: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
       console.error('Hume API Error details:', errorText);
+      
+      // Try fallback with a different API key if available
+      const fallbackKey = process.env.HUME_SECRET_KEY;
+      if (fallbackKey && fallbackKey !== apiKey) {
+        console.log("Attempting with fallback API key");
+        const fallbackResponse = await fetch('https://api.hume.ai/v0/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${fallbackKey}`
+          },
+          body: JSON.stringify({
+            model: "hume-chat-ai-v2-beta",
+            messages: [
+              {
+                role: "system",
+                content: "You are an AI assistant specializing in technology topics, especially AI tools and developments. Keep answers concise (under 4 sentences when possible), accurate, and helpful. For non-tech questions, be friendly but brief. Avoid speculation or making up information. If you don't know, say so clearly."
+              },
+              {
+                role: "user",
+                content: preprocessQuery(query)
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 256
+          }),
+          cache: 'no-store'
+        });
+        
+        if (!fallbackResponse.ok) {
+          console.error(`Fallback Hume API Error: ${fallbackResponse.status} ${fallbackResponse.statusText}`);
+          return null;
+        }
+        
+        const fallbackData = await fallbackResponse.json();
+        if (!fallbackData.choices || !fallbackData.choices[0] || !fallbackData.choices[0].message) {
+          console.error('Unexpected fallback Hume API response format:', fallbackData);
+          return null;
+        }
+        
+        const fallbackAnswer = fallbackData.choices[0].message.content || '';
+        return {
+          answer: postprocessAnswer(fallbackAnswer),
+          confidence: 0.9,
+          isTechQuestion: isTechQuestion(query),
+          source: 'Hume AI (Fallback)'
+        };
+      }
+      
       return null;
     }
 
     const data = await response.json();
+    console.log("Hume API response received:", JSON.stringify(data).substring(0, 200) + "...");
     
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       console.error('Unexpected Hume API response format:', data);

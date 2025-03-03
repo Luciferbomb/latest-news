@@ -25,13 +25,15 @@ export async function fetchBlogPosts(): Promise<BlogPost[]> {
     const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
       method: 'GET',
       headers: {
-        'X-Access-Key': JSONBIN_ACCESS_KEY
-      }
+        'X-Access-Key': JSONBIN_ACCESS_KEY,
+        'X-Bin-Meta': 'false' // Ensure we don't get metadata that might limit the response
+      },
+      cache: 'no-store' // Ensure we always get fresh data
     });
 
     if (!response.ok) {
       if (ENABLE_LOGGING) {
-        console.error(`Error fetching from JSONBin: ${response.status} ${response.statusText}`);
+        console.error(`Error fetching from JSONBin with Access Key: ${response.status} ${response.statusText}`);
       }
       // Try fallback approach with Master Key
       const fallbackResponse = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
@@ -39,7 +41,8 @@ export async function fetchBlogPosts(): Promise<BlogPost[]> {
         headers: {
           'X-Master-Key': JSONBIN_API_KEY,
           'X-Bin-Meta': 'false'
-        }
+        },
+        cache: 'no-store' // Ensure we always get fresh data
       });
 
       if (!fallbackResponse.ok) {
@@ -58,7 +61,9 @@ export async function fetchBlogPosts(): Promise<BlogPost[]> {
         console.log('Data structure:', JSON.stringify(data).substring(0, 200) + '...');
       }
 
-      return processJsonBinData(data);
+      const posts = processJsonBinData(data);
+      console.log(`Processed ${posts.length} posts from JSONBin`);
+      return posts;
     }
 
     const data = await response.json();
@@ -68,7 +73,9 @@ export async function fetchBlogPosts(): Promise<BlogPost[]> {
       console.log('Data preview:', JSON.stringify(data).substring(0, 200) + '...');
     }
 
-    return processJsonBinData(data);
+    const posts = processJsonBinData(data);
+    console.log(`Processed ${posts.length} posts from JSONBin`);
+    return posts;
   } catch (error) {
     console.error('Error fetching blog posts:', error);
     return getSampleBlogPosts(); // Fallback to sample data in case of error

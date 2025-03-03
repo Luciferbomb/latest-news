@@ -1,67 +1,82 @@
-// Service worker type declarations
-declare const self: ServiceWorkerGlobalScope;
+// Service Worker for AI News PWA
+// This service worker handles caching, offline support, and background updates
 
-// This service worker can be customized
+// Cache names
+const STATIC_CACHE = 'static-cache-v1';
+const DYNAMIC_CACHE = 'dynamic-cache-v1';
+const NEWS_CACHE = 'news-cache-v1';
+const API_CACHE = 'api-cache-v1';
+
+// Assets to cache immediately
+const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/favicon.ico',
+  '/offline'
+];
+
+// Install event - cache static assets
 self.addEventListener('install', (event) => {
-  console.log('Service worker installed');
-  event.waitUntil(self.skipWaiting());
-});
-
-self.addEventListener('activate', (event) => {
-  console.log('Service worker activated');
-  event.waitUntil(self.clients.claim());
-});
-
-// Cache the app shell and static assets
-self.addEventListener('fetch', (event) => {
-  // Skip cross-origin requests
-  if (!event.request.url.startsWith(self.location.origin)) {
-    return;
-  }
-
-  // For navigation requests, try the network first, then fall back to the cache
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          // If we don't have a cached response, return a fallback page
-          return caches.match('/');
-        });
+  event.waitUntil(
+    caches.open(STATIC_CACHE)
+      .then((cache) => {
+        return cache.addAll(STATIC_ASSETS);
       })
-    );
-    return;
-  }
-
-  // For other requests, try the cache first, then fall back to the network
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Return the cached response
-        return cachedResponse;
-      }
-      
-      // If not in cache, fetch from network
-      return fetch(event.request).then((response) => {
-        // Don't cache non-successful responses
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
-        }
-
-        // Clone the response since we need to use it twice
-        const responseToCache = response.clone();
-
-        // Add the response to the cache
-        caches.open('v1').then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-
-        return response;
-      });
-    })
+      .then(() => {
+        return self.skipWaiting();
+      })
   );
+});
+
+// Activate event - clean up old caches
+self.addEventListener('activate', (event) => {
+  const currentCaches = [STATIC_CACHE, DYNAMIC_CACHE, NEWS_CACHE, API_CACHE];
+  
+  event.waitUntil(
+    caches.keys()
+      .then((cacheNames) => {
+        return cacheNames.filter((cacheName) => !currentCaches.includes(cacheName));
+      })
+      .then((cachesToDelete) => {
+        return Promise.all(
+          cachesToDelete.map((cacheToDelete) => {
+            return caches.delete(cacheToDelete);
+          })
+        );
+      })
+      .then(() => self.clients.claim())
+  );
+});
+
+// Fetch event - network first with cache fallback for API routes, cache first for static assets
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+  
+  // Handle API requests
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Clone the response to store in cache
+          const responseToCache = response.clone();
+          
+          // Only cache successful responses
+          if (response.ok) {
+            caches.open(API_CACHE)
+              .then((cache) => {
+                cache.put(request, responseToCache);
+              });
+          }
+          
+          return response;
+        })
+        .catch(() => {
+          return caches.match(request);
+        })
+    );
+  }
 });
 
 // Background sync for news updates
@@ -71,7 +86,7 @@ self.addEventListener('sync', (event) => {
   }
 });
 
-// Periodic background sync for news updates (every 6 hours)
+// Periodic background sync for news updates (daily)
 self.addEventListener('periodicsync', (event) => {
   if (event.tag === 'news-update') {
     event.waitUntil(updateNews());
@@ -81,94 +96,113 @@ self.addEventListener('periodicsync', (event) => {
 // Function to update news in the background
 async function updateNews() {
   try {
-    const response = await fetch('/api/news-update', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch news updates');
-    }
-
-    const data = await response.json();
+    // Check if we've already updated today
+    const lastUpdateKey = 'last-news-update';
+    const lastUpdate = localStorage.getItem(lastUpdateKey);
+    const now = new Date();
     
-    // Store the updated news in the cache
-    const cache = await caches.open('news-cache');
-    await cache.put(
-      new Request('/api/news-update'),
-      new Response(JSON.stringify(data), {
-        headers: { 'Content-Type': 'application/json' },
+    // If we have a last update time and it's from today, skip the update
+    if (lastUpdate) {
+      const lastUpdateDate = new Date(lastUpdate);
+      if (lastUpdateDate.toDateString() === now.toDateString()) {
+        console.log('News already updated today, skipping');
+        return;
+      }
+    }
+    
+    console.log('Fetching fresh news data...');
+    
+    // Fetch from multiple endpoints to ensure comprehensive coverage
+    const endpoints = [
+      '/api/combined-news',
+      '/api/news-update',
+      '/api/blog'
+    ];
+    
+    // Fetch from all endpoints in parallel
+    const fetchPromises = endpoints.map(endpoint => 
+      fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
       })
     );
-
-    // Notify all clients about the update
+    
+    const responses = await Promise.all(fetchPromises);
+    
+    // Store all successful responses in the cache
+    const cache = await caches.open('news-cache');
+    
+    for (let i = 0; i < responses.length; i++) {
+      if (responses[i].ok) {
+        await cache.put(
+          new Request(endpoints[i]),
+          responses[i].clone()
+        );
+      }
+    }
+    
+    // Update the last update timestamp
+    localStorage.setItem(lastUpdateKey, now.toISOString());
+    
+    console.log('News data updated successfully');
+    
+    // Notify any open clients about the update
     const clients = await self.clients.matchAll();
     clients.forEach(client => {
       client.postMessage({
         type: 'NEWS_UPDATED',
-        lastUpdated: data.lastUpdated
+        timestamp: now.toISOString()
       });
     });
-
-    return data;
+    
+    return true;
   } catch (error) {
-    console.error('Background news update failed:', error);
-    return null;
+    console.error('Error updating news:', error);
+    return false;
   }
 }
 
-// Schedule periodic news updates (every 6 hours)
-setInterval(() => {
-  updateNews();
-}, 6 * 60 * 60 * 1000);
+// Register for periodic sync when supported
+if (self.registration && 'periodicSync' in self.registration) {
+  // Try to register for daily updates
+  try {
+    self.registration.periodicSync.register('news-update', {
+      minInterval: 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+    });
+    console.log('Registered for daily news updates');
+  } catch (error) {
+    console.error('Failed to register periodic sync:', error);
+  }
+}
 
-// Push notification handler
+// Handle push notifications
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   
-  try {
-    const data = event.data.json();
-    
-    // Show notification for new AI news
-    const options = {
-      body: data.description || 'Check out the latest AI news!',
-      icon: '/icons/icon-192x192.png',
-      badge: '/icons/badge-72x72.png',
-      data: {
-        url: data.url || '/'
-      }
-    };
-    
-    event.waitUntil(
-      self.registration.showNotification('AI News Hub: ' + (data.title || 'New Update'), options)
-    );
-  } catch (error) {
-    console.error('Error showing notification:', error);
-  }
+  const data = event.data.json();
+  
+  const options = {
+    body: data.body || 'Check out the latest AI news!',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/badge-72x72.png',
+    data: {
+      url: data.url || '/'
+    }
+  };
+  
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'New Update', options)
+  );
 });
 
-// Notification click handler
+// Handle notification clicks
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
-  // Open the target URL when notification is clicked
-  if (event.notification.data && event.notification.data.url) {
-    event.waitUntil(
-      self.clients.matchAll({ type: 'window' }).then(clientList => {
-        // Check if there's already a window open with the target URL
-        for (const client of clientList) {
-          if (client.url === event.notification.data.url && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        
-        // If no window is open with that URL, open a new one
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(event.notification.data.url);
-        }
-      })
-    );
-  }
+  event.waitUntil(
+    clients.openWindow(event.notification.data.url)
+  );
 });

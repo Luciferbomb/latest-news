@@ -57,8 +57,8 @@ const TECH_KEYWORDS = [
  * Checks if a query is related to technology
  */
 function isTechQuestion(query: string): boolean {
-  const lowerQuery = query.toLowerCase();
-  return TECH_KEYWORDS.some(keyword => lowerQuery.includes(keyword.toLowerCase()));
+  const techKeywords = ['ai', 'artificial intelligence', 'machine learning', 'technology', 'software', 'hardware', 'computer', 'digital', 'app', 'application', 'code', 'programming', 'developer', 'tech', 'algorithm', 'data', 'neural', 'model', 'automation', 'robot'];
+  return techKeywords.some(keyword => query.toLowerCase().includes(keyword));
 }
 
 /**
@@ -95,26 +95,16 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
   try {
     console.log("Attempting to call Hume API with query:", query);
     
-    // Use the correct chat completions API endpoint
-    const response = await fetch('https://api.hume.ai/v0/chat/completions', {
+    // Use the correct API endpoint for Hume AI
+    const response = await fetch('https://api.hume.ai/v0/models/text/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'X-Hume-Api-Key': apiKey
       },
       body: JSON.stringify({
-        model: "hume-chat-ai-v2-beta", // Use the correct model name
-        messages: [
-          {
-            role: "system",
-            content: "You are an AI assistant specializing in technology topics, especially AI tools and developments. Keep answers concise (under 4 sentences when possible), accurate, and helpful. For non-tech questions, be friendly but brief. Avoid speculation or making up information. If you don't know, say so clearly."
-          },
-          {
-            role: "user",
-            content: preprocessQuery(query)
-          }
-        ],
-        temperature: 0.7,
+        config_id: configId,
+        prompt: preprocessQuery(query),
         max_tokens: 256
       }),
       cache: 'no-store' // Ensure we don't get cached responses
@@ -129,25 +119,15 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
       const fallbackKey = process.env.HUME_SECRET_KEY;
       if (fallbackKey && fallbackKey !== apiKey) {
         console.log("Attempting with fallback API key");
-        const fallbackResponse = await fetch('https://api.hume.ai/v0/chat/completions', {
+        const fallbackResponse = await fetch('https://api.hume.ai/v0/models/text/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${fallbackKey}`
+            'X-Hume-Api-Key': fallbackKey
           },
           body: JSON.stringify({
-            model: "hume-chat-ai-v2-beta",
-            messages: [
-              {
-                role: "system",
-                content: "You are an AI assistant specializing in technology topics, especially AI tools and developments. Keep answers concise (under 4 sentences when possible), accurate, and helpful. For non-tech questions, be friendly but brief. Avoid speculation or making up information. If you don't know, say so clearly."
-              },
-              {
-                role: "user",
-                content: preprocessQuery(query)
-              }
-            ],
-            temperature: 0.7,
+            config_id: configId,
+            prompt: preprocessQuery(query),
             max_tokens: 256
           }),
           cache: 'no-store'
@@ -155,16 +135,16 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
         
         if (!fallbackResponse.ok) {
           console.error(`Fallback Hume API Error: ${fallbackResponse.status} ${fallbackResponse.statusText}`);
-          return null;
+          return generateFallbackResponse(query);
         }
         
         const fallbackData = await fallbackResponse.json();
-        if (!fallbackData.choices || !fallbackData.choices[0] || !fallbackData.choices[0].message) {
+        if (!fallbackData.text) {
           console.error('Unexpected fallback Hume API response format:', fallbackData);
-          return null;
+          return generateFallbackResponse(query);
         }
         
-        const fallbackAnswer = fallbackData.choices[0].message.content || '';
+        const fallbackAnswer = fallbackData.text || '';
         return {
           answer: postprocessAnswer(fallbackAnswer),
           confidence: 0.9,
@@ -173,18 +153,18 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
         };
       }
       
-      return null;
+      return generateFallbackResponse(query);
     }
 
     const data = await response.json();
     console.log("Hume API response received:", JSON.stringify(data).substring(0, 200) + "...");
     
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+    if (!data.text) {
       console.error('Unexpected Hume API response format:', data);
-      return null;
+      return generateFallbackResponse(query);
     }
 
-    const answer = data.choices[0].message.content || '';
+    const answer = data.text || '';
     
     return {
       answer: postprocessAnswer(answer),
@@ -194,7 +174,7 @@ async function getHumeResponse(query: string): Promise<VoiceAssistantResponse | 
     };
   } catch (error) {
     console.error('Hume API request error:', error);
-    return null;
+    return generateFallbackResponse(query);
   }
 }
 
@@ -229,56 +209,19 @@ function postprocessAnswer(answer: string): string {
  * Generates a fallback response based on the query
  */
 function generateFallbackResponse(query: string): VoiceAssistantResponse {
-  // Check if it's a tech question
-  const techQuestion = isTechQuestion(query);
+  let answer = "I'm sorry, I couldn't process your request at the moment. ";
   
-  if (!techQuestion) {
-    return {
-      answer: "I'm sorry, I can only answer questions related to technology, AI, and computing. Please ask me about tech topics.",
-      confidence: 0.9,
-      isTechQuestion: false,
-      source: "fallback"
-    };
+  if (isTechQuestion(query)) {
+    answer += "This appears to be a technology-related question. Please try again later or check our news feed for the latest AI updates.";
+  } else {
+    answer += "Please try again later or browse our latest news for information that might help.";
   }
   
-  // For tech questions, provide responses from our knowledge base
-  
-  // General tech questions
-  if (query.toLowerCase().includes('what is') || query.toLowerCase().includes('how does')) {
-    return {
-      answer: `Based on the latest information, ${query.replace(/what is|how does/i, '').trim()} involves advanced technology that combines machine learning algorithms with specialized hardware. The most recent developments in this field focus on efficiency and accessibility.`,
-      confidence: 0.85,
-      isTechQuestion: true,
-      source: "fallback"
-    };
-  }
-  
-  // AI-specific questions
-  if (query.toLowerCase().includes('ai') || query.toLowerCase().includes('artificial intelligence')) {
-    return {
-      answer: "Artificial Intelligence is rapidly evolving. Recent advancements include more powerful language models, multimodal capabilities, and improved reasoning. Companies like OpenAI, Anthropic, and Google are leading innovation in this space with models like GPT-4, Claude, and Gemini.",
-      confidence: 0.9,
-      isTechQuestion: true,
-      source: "fallback"
-    };
-  }
-
-  // News-related tech questions
-  if (query.toLowerCase().includes('news') || query.toLowerCase().includes('latest') || query.toLowerCase().includes('recent')) {
-    return {
-      answer: "The most recent tech news includes advancements in AI language models, new consumer devices, and breakthroughs in quantum computing. You can view the latest tech news in our news feed section.",
-      confidence: 0.87,
-      isTechQuestion: true,
-      source: "fallback"
-    };
-  }
-  
-  // Fallback for other tech questions
   return {
-    answer: "That's an interesting technology question. While I don't have specific information on that, you might find relevant articles in our news feed or by searching our site for related topics.",
-    confidence: 0.7,
-    isTechQuestion: true,
-    source: "fallback"
+    answer,
+    confidence: 0.5,
+    isTechQuestion: isTechQuestion(query),
+    source: 'Fallback System'
   };
 }
 

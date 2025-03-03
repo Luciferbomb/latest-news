@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Play, Pause, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Play, Pause, ExternalLink, AlertTriangle } from "lucide-react";
 import { hasValidVideoId } from "@/lib/video-fallbacks";
+import Image from "next/image";
 
 export interface VideoItem {
   id: string;
@@ -31,6 +32,9 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Move currentVideo declaration here, before it's used in any hooks
+  const currentVideo = videos && videos.length > 0 ? videos[currentIndex] : null;
+
   const handleNext = () => {
     setCurrentIndex((prevIndex) => (prevIndex + 1) % videos.length);
     resetPlayState();
@@ -48,22 +52,48 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     setThumbnailError(false);
   };
 
-  const togglePlayPause = () => {
-    if (isValidYouTubeVideo(currentVideo) && !iframeError) {
-      // For YouTube videos, we just toggle the state and the iframe src will update
-      setIsPlaying(!isPlaying);
-    } else if (videoRef.current) {
-      // For regular videos, use the video element API
-      if (isPlaying) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play().catch(err => {
-          console.error("Error playing video:", err);
-        });
+  // Check if it's a valid YouTube video
+  const isValidYouTubeVideo = (video: VideoItem): boolean => {
+    if (!video) return false;
+    
+    // Check if we have a valid embed URL
+    try {
+      const embedUrl = video.embedUrl || '';
+      
+      // Check if it's a valid YouTube URL
+      const isYouTubeUrl = 
+        embedUrl.includes('youtube.com') || 
+        embedUrl.includes('youtu.be') ||
+        (video.videoUrl && (video.videoUrl.includes('youtube.com') || video.videoUrl.includes('youtu.be')));
+      
+      // Extract video ID and check if it's valid
+      let videoId = '';
+      
+      if (embedUrl.includes('youtube.com/embed/')) {
+        videoId = embedUrl.split('youtube.com/embed/')[1]?.split('?')[0] || '';
+      } else if (embedUrl.includes('youtube.com/watch')) {
+        const urlObj = new URL(embedUrl);
+        videoId = urlObj.searchParams.get('v') || '';
+      } else if (embedUrl.includes('youtu.be/')) {
+        videoId = embedUrl.split('youtu.be/')[1]?.split('?')[0] || '';
       }
-      setIsPlaying(!isPlaying);
+      
+      // Ensure we return a boolean value
+      return Boolean(isYouTubeUrl && videoId.length === 11);
+    } catch (error) {
+      console.error('Error validating YouTube video:', error);
+      return false;
     }
   };
+
+  const togglePlayPause = useCallback(() => {
+    if (!currentVideo || !isValidYouTubeVideo(currentVideo)) {
+      console.warn('Cannot toggle play/pause: Invalid or missing video');
+      return;
+    }
+    
+    setIsPlaying((prev) => !prev);
+  }, [currentVideo, isValidYouTubeVideo]);
 
   // Handle iFrame load success
   const handleIframeLoad = () => {
@@ -79,84 +109,44 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     setIframeLoading(false);
   };
 
-  // Check if it's a valid YouTube video
-  const isValidYouTubeVideo = (video: VideoItem): boolean => {
-    return (
-      !!video.id && 
-      hasValidVideoId(video.id) && 
-      !!video.embedUrl && 
-      video.embedUrl.includes('youtube.com/embed/')
-    );
-  };
-
   // Get optimized embed URL with safeguards
-  const getEmbedUrl = (embedUrl: string, isPlaying: boolean): string => {
-    if (!embedUrl || typeof embedUrl !== 'string') {
-      console.warn('Invalid embed URL:', embedUrl);
-      return '';
-    }
-    
+  const getEmbedUrl = (url: string, autoplay: boolean = false): string => {
     try {
-      // Make sure we're using the correct YouTube embed URL format
-      let url = embedUrl;
+      if (!url) return '';
       
-      // Clean up the URL to remove any existing parameters
-      if (url.includes('?')) {
-        url = url.split('?')[0];
+      // If it's already a valid embed URL, just add parameters
+      if (url.includes('youtube.com/embed/')) {
+        const baseUrl = url.split('?')[0];
+        return `${baseUrl}?autoplay=${autoplay ? 1 : 0}&mute=${autoplay ? 1 : 0}&enablejsapi=1`;
       }
       
-      // Extract video ID to use proper embed URL
-      let videoId = "";
+      // Extract video ID from various YouTube URL formats
+      let videoId = '';
       
-      // Handle different YouTube URL formats
-      if (url.includes('/embed/')) {
-        videoId = url.split('/embed/').pop() || "";
-      } else if (url.includes('youtu.be/')) {
-        videoId = url.split('youtu.be/').pop() || "";
-      } else if (url.includes('youtube.com/watch')) {
-        try {
-          const urlObj = new URL(url);
-          videoId = urlObj.searchParams.get('v') || "";
-        } catch (e) {
-          // Handle case where URL might be malformed
-          const match = url.match(/[?&]v=([^&]+)/);
-          videoId = match ? match[1] : "";
-        }
-      } else {
-        // Fallback extraction - assume the last part of the path is the ID
-        const parts = url.split('/');
-        videoId = parts[parts.length - 1] || "";
+      // youtube.com/watch?v=VIDEO_ID format
+      if (url.includes('youtube.com/watch')) {
+        const urlObj = new URL(url);
+        videoId = urlObj.searchParams.get('v') || '';
+      } 
+      // youtu.be/VIDEO_ID format
+      else if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1]?.split('?')[0] || '';
+      }
+      // youtube.com/v/VIDEO_ID format
+      else if (url.match(/youtube\.com\/v\/([^?&]+)/)) {
+        videoId = url.match(/youtube\.com\/v\/([^?&]+)/)?.[1] || '';
+      }
+      // Direct video ID
+      else if (/^[A-Za-z0-9_-]{11}$/.test(url)) {
+        videoId = url;
       }
       
-      // Remove any extra path segments after the ID
-      if (videoId.includes('/')) {
-        videoId = videoId.split('/')[0];
-      }
-      
-      // If no video ID could be extracted, return empty string
       if (!videoId) {
-        console.error("Could not extract video ID from URL:", embedUrl);
+        console.error('Invalid YouTube URL format:', url);
         return '';
       }
       
-      // Verify the ID is in our list of known good IDs
-      if (!hasValidVideoId(videoId)) {
-        console.warn("Video ID not in list of verified IDs:", videoId);
-      }
-      
-      // Build the final embed URL with necessary parameters
-      const params = new URLSearchParams({
-        autoplay: isPlaying ? '1' : '0',
-        mute: isPlaying ? '1' : '0',
-        enablejsapi: '1',
-        modestbranding: '1',
-        rel: '0',
-        showinfo: '0',
-        fs: '1',
-        origin: typeof window !== 'undefined' ? window.location.origin : '',
-      }).toString();
-      
-      return `https://www.youtube.com/embed/${videoId}?${params}`;
+      return `https://www.youtube.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&mute=${autoplay ? 1 : 0}&enablejsapi=1`;
     } catch (error) {
       console.error('Error generating embed URL:', error);
       return '';
@@ -185,8 +175,6 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
   if (!videos || videos.length === 0) {
     return null;
   }
-
-  const currentVideo = videos[currentIndex];
   
   // Make sure we have a valid video with required fields
   if (!currentVideo || !currentVideo.title || (!currentVideo.videoUrl && !currentVideo.embedUrl)) {
@@ -201,81 +189,66 @@ export function VideoCarousel({ videos }: VideoCarouselProps) {
     <div className="relative w-full max-w-5xl mx-auto overflow-hidden rounded-xl bg-black">
       <div className="relative aspect-video w-full">
         {/* Video - use iframe for YouTube videos, fallback to regular video or image */}
-        {hasValidEmbed && !iframeError ? (
-          <>
-            {iframeLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-              </div>
-            )}
+        {currentVideo && currentVideo.embedUrl && !iframeError ? (
+          <div className="relative w-full h-full">
             <iframe
               ref={iframeRef}
-              src={getEmbedUrl(currentVideo.embedUrl!, isPlaying)}
-              className="w-full h-full object-cover"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              className="w-full h-full"
+              src={getEmbedUrl(currentVideo.embedUrl, isPlaying)}
+              title={currentVideo.title || "Video"}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
-              onLoad={handleIframeLoad}
-              onError={handleIframeError}
-              title={currentVideo.title}
-              sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
-              loading="lazy"
+              onError={() => {
+                console.error('Error loading iframe');
+                setIframeError(true);
+              }}
             />
-          </>
-        ) : currentVideo.videoUrl?.endsWith('.mp4') ? (
-          <video
-            ref={videoRef}
-            src={currentVideo.videoUrl}
-            poster={currentVideo.thumbnailUrl}
-            className="w-full h-full object-cover"
-            onEnded={() => setIsPlaying(false)}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onError={() => console.error("Video error")}
-          />
+          </div>
         ) : (
-          // Fallback to just showing the thumbnail with a link to YouTube
-          <div className="relative w-full h-full bg-black">
-            {thumbnailError ? (
-              // Show a placeholder when thumbnail fails to load
-              <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                <div className="text-white text-center p-4">
-                  <div className="text-4xl mb-2">📺</div>
-                  <div className="text-xl font-semibold">{currentVideo.title}</div>
-                  <div className="text-sm text-gray-400 mt-2">Video preview unavailable</div>
-                </div>
-              </div>
-            ) : (
-              <img 
-                src={currentVideo.thumbnailUrl} 
-                alt={currentVideo.title}
-                className="w-full h-full object-cover"
-                loading="lazy"
-                onError={(e) => {
-                  console.error("Image loading error for thumbnail:", currentVideo.thumbnailUrl);
+          <div className="relative w-full h-full bg-black flex items-center justify-center">
+            {currentVideo?.thumbnailUrl ? (
+              <Image
+                src={currentVideo.thumbnailUrl}
+                alt={currentVideo.title || "Video thumbnail"}
+                fill
+                className="object-contain"
+                onError={() => {
+                  console.error('Error loading thumbnail');
                   setThumbnailError(true);
                 }}
               />
-            )}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <a 
-                href={currentVideo.videoUrl} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="p-4 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
-              >
-                <ExternalLink className="h-8 w-8 text-white" />
-              </a>
-            </div>
-            {iframeError ? (
-              <div className="absolute bottom-0 left-0 right-0 bg-red-700/80 text-white text-center text-sm py-1">
-                {currentVideo.fromFallback ? 
-                  "Using sample video data. YouTube API needs configuration." : 
-                  "Could not load embedded video. Click to view on YouTube."
-                }
-              </div>
             ) : (
-              <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-center text-sm py-1">
-                Click to view video on YouTube
+              <div className="text-white text-center p-4">
+                <AlertTriangle className="mx-auto mb-2 h-12 w-12" />
+                <p>Video unavailable</p>
+                {currentVideo?.videoUrl && (
+                  <a 
+                    href={currentVideo.videoUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline mt-2 block"
+                  >
+                    View on YouTube
+                  </a>
+                )}
+              </div>
+            )}
+            {isPlaying && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                <div className="text-white text-center">
+                  <AlertTriangle className="mx-auto mb-2 h-12 w-12" />
+                  <p>Unable to play this video</p>
+                  {currentVideo?.videoUrl && (
+                    <a 
+                      href={currentVideo.videoUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:underline mt-2 block"
+                    >
+                      View on YouTube
+                    </a>
+                  )}
+                </div>
               </div>
             )}
           </div>

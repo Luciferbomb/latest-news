@@ -92,19 +92,35 @@ function processJsonBinData(data: any): BlogPost[] {
       return [];
     }
 
+    // Log the data structure for debugging
+    console.log('Processing JSONBin data:');
+    console.log('Data type:', typeof data);
+    if (typeof data === 'object') {
+      console.log('Keys:', Object.keys(data));
+      
+      // Check if we have a posts array directly
+      if (data.posts && Array.isArray(data.posts)) {
+        console.log(`Found ${data.posts.length} posts in data.posts array`);
+        return data.posts.map((item: any) => convertToBlogPost(item));
+      }
+    }
+
     // Case 1: Direct array of posts
     if (Array.isArray(data)) {
+      console.log(`Found ${data.length} posts in direct array`);
       return data.map((item: any) => convertToBlogPost(item));
     }
 
     // Case 2: Data with record property (standard JSONBin format)
     if (data.record) {
       if (Array.isArray(data.record)) {
+        console.log(`Found ${data.record.length} posts in data.record array`);
         return data.record.map((item: any) => convertToBlogPost(item));
       }
       
       // If record is an object with posts
       if (data.record.posts && Array.isArray(data.record.posts)) {
+        console.log(`Found ${data.record.posts.length} posts in data.record.posts array`);
         return data.record.posts.map((item: any) => convertToBlogPost(item));
       }
       
@@ -113,28 +129,32 @@ function processJsonBinData(data: any): BlogPost[] {
         // Try to extract any objects that look like posts
         const possiblePosts = Object.values(data.record);
         if (Array.isArray(possiblePosts)) {
-          return possiblePosts
-            .filter((item: any) => item && typeof item === 'object')
-            .map((item: any) => convertToBlogPost(item));
+          const filteredPosts = possiblePosts
+            .filter((item: any) => item && typeof item === 'object');
+          console.log(`Found ${filteredPosts.length} possible posts in record object values`);
+          return filteredPosts.map((item: any) => convertToBlogPost(item));
         }
       }
       
       // If record itself looks like a single post
       if (data.record.title || data.record.topic || data.record.content) {
+        console.log('Found a single post in data.record');
         return [convertToBlogPost(data.record)];
       }
     }
 
     // If the data itself looks like a post
     if (data.title || data.topic || data.content) {
+      console.log('Found a single post in data');
       return [convertToBlogPost(data)];
     }
 
     console.log('Could not determine data structure, returning empty array');
-    return [];
+    console.log('Data sample:', JSON.stringify(data).substring(0, 300));
+    return getSampleBlogPosts(); // Return sample posts instead of empty array
   } catch (err) {
     console.error('Error processing data:', err);
-    return [];
+    return getSampleBlogPosts(); // Return sample posts on error
   }
 }
 

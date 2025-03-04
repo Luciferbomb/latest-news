@@ -160,14 +160,14 @@ export function Footer() {
             <div className="flex items-center justify-center gap-2">
               <img 
                 src="/images/logo-color.svg" 
-                alt="Quantash Labs Ai Logo" 
+                alt="Quantash Global Tech Logo" 
                 className="h-10 w-10" 
               />
-              <span className="text-white/80 text-lg font-light">Quantash Labs Ai</span>
+              <span className="text-white/80 text-lg font-light">Quantash Global Tech</span>
               <span className="text-xs align-top text-white/60">™</span>
             </div>
             <p className="text-sm text-white/40">
-              © {new Date().getFullYear()} AI News Hub. A product of Quantash Labs Ai™. All rights reserved.
+              © {new Date().getFullYear()} AI News Hub. A product of Quantash Global Tech™. All rights reserved.
             </p>
             <p className="text-xs text-white/30 mt-1">
               Version 1.2.3 | <span className="text-indigo-400/60">Enhanced YouTube Video Support</span>

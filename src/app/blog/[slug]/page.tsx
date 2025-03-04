@@ -144,8 +144,8 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                         {relatedPost.title}
                       </Link>
                     </h3>
-                    <p className="text-gray-600 mb-4 line-clamp-2">
-                      {relatedPost.excerpt}
+                    <p className="text-gray-600 mb-4 line-clamp-3 overflow-hidden">
+                      {relatedPost.excerpt || relatedPost.content.substring(0, 500).replace(/<[^>]*>/g, '').trim().replace(/\s+[^\s]+$/, '') + '...'}
                     </p>
                     <div className="flex justify-between items-center">
                       <p className="text-sm text-gray-500">

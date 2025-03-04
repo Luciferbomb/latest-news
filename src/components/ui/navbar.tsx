@@ -42,7 +42,7 @@ export function Navbar() {
             <div className="flex items-center">
               <img 
                 src="/images/logo-color.svg" 
-                alt="Quantash Labs Ai Logo" 
+                alt="Quantash Global Tech Logo" 
                 className="h-8 w-8" 
               />
             </div>
@@ -50,7 +50,7 @@ export function Navbar() {
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-rose-400">
                 AI News Hub
               </span>
-              <span className="text-[10px] text-white/60 -mt-1">by Quantash Labs Ai™</span>
+              <span className="text-[10px] text-white/60 -mt-1">by Quantash Global Tech™</span>
             </div>
           </Link>
 
@@ -139,10 +139,10 @@ export function Navbar() {
               <div className="flex items-center gap-2 mb-4">
                 <img 
                   src="/images/logo-color.svg" 
-                  alt="Quantash Labs Ai Logo" 
+                  alt="Quantash Global Tech Logo" 
                   className="h-6 w-6" 
                 />
-                <span className="text-sm text-white/60">Quantash Labs Ai™</span>
+                <span className="text-sm text-white/60">Quantash Global Tech™</span>
               </div>
               <nav className="flex flex-col gap-4">
                 <Link

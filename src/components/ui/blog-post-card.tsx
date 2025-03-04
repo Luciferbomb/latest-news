@@ -12,7 +12,7 @@ export function BlogPostCard({ post, featured = false }: BlogPostCardProps) {
     tags: post.tags || ['Technology', 'AI'],
     imageUrl: post.imageUrl || 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?q=80&w=1965&auto=format&fit=crop',
     author: post.author || 'AI News Team',
-    excerpt: post.excerpt || post.content.substring(0, 150).replace(/<[^>]*>/g, '') + '...'
+    excerpt: post.excerpt || post.content.substring(0, 500).replace(/<[^>]*>/g, '').trim().replace(/\s+[^\s]+$/, '') + '...'
   };
   
   // Format the date properly
@@ -51,7 +51,7 @@ export function BlogPostCard({ post, featured = false }: BlogPostCardProps) {
             {safePost.title}
           </Link>
         </h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-6 line-clamp-3">
+        <p className="text-gray-600 dark:text-gray-300 mb-6 line-clamp-4 overflow-hidden">
           {safePost.excerpt}
         </p>
         <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700">

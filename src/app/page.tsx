@@ -1,6 +1,5 @@
 import { DemoHeroGeometric } from "@/components/demo-hero-geometric";
 import { NewsFeed } from "@/components/news-feed";
-import { VideoNewsSection } from "@/components/video-news-section";
 import { AIImageGallery } from "@/components/ai-image-gallery";
 import { JobImpactPromo } from "@/components/job-impact-promo";
 import { Metadata } from "next";
@@ -15,10 +14,7 @@ export default function Home() {
     <main>
       <DemoHeroGeometric />
       <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <VideoNewsSection />
-          </div>
+        <div className="grid grid-cols-1 gap-8">
           <div>
             <AIImageGallery query="artificial intelligence news visualization" />
           </div>

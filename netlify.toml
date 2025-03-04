@@ -1,6 +1,7 @@
 [build]
   command = "chmod +x netlify-build.sh && ./netlify-build.sh"
-  publish = ".next/standalone"
+  publish = ".next/publish"
+  functions = ".next/publish/netlify/functions"
 
 [build.environment]
   # Set to false to allow the Next.js plugin to work
@@ -35,9 +36,9 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Handle all routes with our Next.js app
 [[redirects]]
   from = "/*"
-  to = "/index.html"
+  to = "/.netlify/functions/next-server"
   status = 200
-  force = false
-  conditions = {type = "404"}
+  force = true

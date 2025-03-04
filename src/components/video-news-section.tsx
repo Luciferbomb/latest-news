@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { VideoCarousel, VideoItem } from './ui/video-carousel';
-import { PanelTop, RefreshCcw } from 'lucide-react';
+import { VideoItem } from './ui/video-carousel';
+import { PanelTop, RefreshCcw, Video } from 'lucide-react';
 import { getFallbackVideos, hasValidVideoId } from '@/lib/video-fallbacks';
 
 export function VideoNewsSection() {
@@ -117,7 +117,20 @@ export function VideoNewsSection() {
             </button>
           </div>
         ) : videos.length > 0 ? (
-          <VideoCarousel videos={videos} />
+          <div className="aspect-video w-full bg-black rounded-xl flex items-center justify-center flex-col p-6">
+            <Video className="h-16 w-16 text-indigo-400 mb-4" />
+            <h3 className="text-white text-xl mb-2">Video Content Temporarily Disabled</h3>
+            <p className="text-white/60 mb-4 text-center max-w-lg">
+              Our video carousel feature has been temporarily disabled. We have {videos.length} videos available in our database and will restore this feature soon.
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center max-w-2xl">
+              {videos.slice(0, 3).map((video) => (
+                <div key={video.id} className="bg-white/5 px-3 py-1 rounded-full text-white/70 text-sm">
+                  {video.title.length > 30 ? video.title.substring(0, 30) + '...' : video.title}
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
           <div className="aspect-video w-full bg-black/30 rounded-xl flex items-center justify-center flex-col p-6">
             <PanelTop className="h-10 w-10 text-white/50 mb-4" />

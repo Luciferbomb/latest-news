@@ -24,6 +24,8 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Enable standalone output mode for Netlify deployment
+  output: 'standalone',
 };
 
 module.exports = withPWA(nextConfig);

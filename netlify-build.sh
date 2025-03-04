@@ -21,11 +21,16 @@ npm run build
 
 # Copy additional files needed for Netlify
 echo "Copying files for Netlify deployment..."
-mkdir -p .next/standalone
-cp -r .next/* .next/standalone/
-cp netlify.toml .next/standalone/
-cp next.config.js .next/standalone/
+# No need to manually copy files to standalone directory as Next.js will create it
+# Just ensure the required files are in the correct location
+cp netlify.toml .next/
 cp -r public .next/standalone/
-cp package.json .next/standalone/
+
+# Ensure the required-server-files.json is in the correct location for Netlify
+echo "Ensuring required-server-files.json is in the correct location..."
+if [ -f ".next/required-server-files.json" ]; then
+  mkdir -p .next/standalone/.next
+  cp .next/required-server-files.json .next/standalone/.next/
+fi
 
 echo "Build complete. Deploy the .next/standalone directory to Netlify." 

@@ -23,13 +23,5 @@ npm install
 echo "Building the Next.js application..."
 npm run build
 
-# Copy additional files needed for Netlify
-echo "Copying files for Netlify deployment..."
-mkdir -p .next/standalone
-cp -r .next/* .next/standalone/
-cp netlify.toml .next/standalone/
-cp next.config.js .next/standalone/
-cp -r public .next/standalone/
-cp package.json .next/standalone/
-
-echo "Build complete. The .next/standalone directory is ready for deployment." 
+# Let the Netlify Next.js plugin handle the deployment
+echo "Build complete. The Netlify Next.js plugin will handle the deployment." 

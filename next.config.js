@@ -25,14 +25,8 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Enable static export for Netlify deployment
-  output: 'export',
-  // Disable server components for static export
-  experimental: {
-    appDir: true,
-  },
-  // Handle dynamic routes in static export
-  trailingSlash: true,
+  // Enable standalone output mode for Netlify deployment
+  output: 'standalone',
 };
 
 module.exports = withPWA(nextConfig);

@@ -23,53 +23,13 @@ npm install
 echo "Building the Next.js application..."
 npm run build
 
-# Create a 404.html page for fallback
-echo "Creating 404.html page..."
-cat > out/404.html << EOF
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Page Not Found | AI News</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-      padding: 20px;
-      text-align: center;
-      color: #333;
-      background-color: #f9f9f9;
-    }
-    h1 {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-    }
-    p {
-      font-size: 1.2rem;
-      max-width: 600px;
-      margin-bottom: 2rem;
-    }
-    a {
-      color: #0070f3;
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
-  </style>
-</head>
-<body>
-  <h1>404 - Page Not Found</h1>
-  <p>The page you're looking for doesn't exist or has been moved.</p>
-  <a href="/">Go back to homepage</a>
-</body>
-</html>
-EOF
+# Copy additional files needed for Netlify
+echo "Copying files for Netlify deployment..."
+mkdir -p .next/standalone
+cp -r .next/* .next/standalone/
+cp netlify.toml .next/standalone/
+cp next.config.js .next/standalone/
+cp -r public .next/standalone/
+cp package.json .next/standalone/
 
-echo "Build complete. The out directory is ready for deployment." 
+echo "Build complete. The .next/standalone directory is ready for deployment." 

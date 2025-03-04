@@ -15,6 +15,7 @@ const nextConfig = {
         hostname: '**',
       },
     ],
+    unoptimized: true,
   },
   // Disable ESLint during builds
   eslint: {

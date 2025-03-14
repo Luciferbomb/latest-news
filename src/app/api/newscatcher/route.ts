@@ -8,7 +8,7 @@ const NEWSCATCHER_API_URL = 'https://api.newscatcherapi.com/v2/search';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const query = searchParams.get('q') || 'AI tools OR AI agents OR GPT OR artificial intelligence automation';
+    const query = searchParams.get('q') || 'artificial intelligence breakthroughs OR AI research advances OR AI tools releases OR AI model updates -crypto -blockchain -nft';
     
     // Since we don't have API keys, we'll use sample data directly
     console.log(`Would fetch Newscatcher API with query: ${query}`);

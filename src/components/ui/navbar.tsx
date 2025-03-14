@@ -50,7 +50,7 @@ export function Navbar() {
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-rose-400">
                 AI News Hub
               </span>
-              <span className="text-[10px] text-white/60 -mt-1">by Quantash Global Tech™</span>
+              <span className="text-[10px] text-white/60 -mt-1">Quantash Global Tech™</span>
             </div>
           </Link>
 

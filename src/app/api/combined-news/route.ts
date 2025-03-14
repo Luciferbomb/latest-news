@@ -29,7 +29,7 @@ interface SourceStatus {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const query = searchParams.get('q') || 'AI tools OR AI agents OR artificial intelligence technology';
+    const query = searchParams.get('q') || 'artificial intelligence breakthroughs OR AI research advances OR AI tools releases OR AI model updates -crypto -blockchain -nft';
     
     console.log(`Fetching news with query: ${query}`);
     
@@ -58,16 +58,23 @@ export async function GET(request: Request) {
       
       // Check if any request was successful
       let successfulResponse = false;
+      let errorMessage = '';
       
       for (const response of responses) {
         if (response.ok) {
-          successfulResponse = true;
           const data = await response.json();
           
+          if (data.status === 'error') {
+            errorMessage = data.message || 'Unknown API error';
+            console.error('NewsAPI error:', data);
+            continue;
+          }
+          
           if (data.status === 'ok' && data.articles && data.articles.length > 0) {
+            successfulResponse = true;
             const articles = data.articles.map((article: any) => ({
               id: `newsapi-${Math.random().toString(36).substring(2)}`,
-              title: article.title,
+              title: article.title || 'Untitled',
               description: article.description || article.content || '',
               imageUrl: article.urlToImage || 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?q=80&w=1965&auto=format&fit=crop',
               date: article.publishedAt || new Date().toISOString(),
@@ -79,6 +86,10 @@ export async function GET(request: Request) {
             
             newsData = [...newsData, ...articles];
           }
+        } else {
+          const text = await response.text();
+          console.error('NewsAPI request failed:', response.status, text);
+          errorMessage = `API request failed: ${response.status} ${response.statusText}`;
         }
       }
       
@@ -89,16 +100,28 @@ export async function GET(request: Request) {
           newsApi: 'success'
         };
       } else {
-        throw new Error('All NewsAPI requests failed');
+        throw new Error(errorMessage || 'All NewsAPI requests failed');
       }
     } catch (apiError) {
-      console.error('Error fetching from real APIs:', apiError);
+      console.error('Error fetching from NewsAPI:', apiError);
+      
+      // If we have mock data and this is development, use it
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Using mock data in development');
+        newsData = getMockNewsData();
+        sourcesStatus = {
+          newscatcher: 'not_used',
+          serpApi: 'not_used',
+          newsApi: 'using_mock'
+        };
+      } else {
+        throw apiError;
+      }
     }
     
-    // If we couldn't get data from real APIs or there was an error, return empty array
+    // If we have no data at all
     if (newsData.length === 0) {
-      console.log('No news data available from API');
-      // Return empty array instead of mock data
+      console.log('No news data available');
       return NextResponse.json({
         news: [],
         lastUpdated: new Date().toISOString(),
@@ -134,18 +157,20 @@ export async function GET(request: Request) {
     return NextResponse.json({
       news: enhancedNews,
       lastUpdated: new Date().toISOString(),
-      sources: {
-        ...sourcesStatus,
-        newsApi: sourcesStatus.newsApi || 'using_mock'
-      }
+      sources: sourcesStatus
     }, { status: 200 });
   } catch (error: any) {
-    console.error('Error providing mock news:', error);
+    console.error('Error providing news:', error);
     
     return NextResponse.json({
       news: [],
       lastUpdated: new Date().toISOString(),
-      error: error.message
+      error: error.message || 'Failed to fetch news',
+      sources: {
+        newscatcher: 'failed',
+        serpApi: 'failed',
+        newsApi: 'failed'
+      }
     }, { status: 500 });
   }
 }

@@ -1,7 +1,8 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/page": "app/page.js",
+  "/api/voice-assistant/route": "app/api/voice-assistant/route.js",
+  "/api/combined-news/route": "app/api/combined-news/route.js",
   "/blog/page": "app/blog/page.js",
+  "/page": "app/page.js",
   "/search/page": "app/search/page.js",
   "/about/page": "app/about/page.js",
   "/categories/page": "app/categories/page.js"

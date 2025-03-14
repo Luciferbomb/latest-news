@@ -18,6 +18,7 @@ const nextConfig = {
   },
   // Configure for Netlify deployment
   output: 'standalone',
+  distDir: '.next',
   // Configure static file serving
   assetPrefix: process.env.NODE_ENV === 'production' ? '/_next' : '',
   // Configure images

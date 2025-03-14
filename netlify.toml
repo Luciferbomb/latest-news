@@ -31,6 +31,12 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Content-Security-Policy = "default-src 'self' newshubai.tech *.newshubai.tech; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
 
+# Handle static files
+[[redirects]]
+  from = "/_next/static/*"
+  to = "/_next/static/:splat"
+  status = 200
+
 # Handle API routes
 [[redirects]]
   from = "/api/*"
@@ -38,14 +44,13 @@
   status = 200
   force = true
 
-# Handle Next.js pages and static files
+# Handle Next.js pages
 [[redirects]]
   from = "/_next/*"
   to = "/_next/:splat"
   status = 200
-  force = true
 
-# Handle all other routes - This should be last
+# Handle root and all other routes
 [[redirects]]
   from = "/*"
   to = "/.netlify/functions/nextjs-server"

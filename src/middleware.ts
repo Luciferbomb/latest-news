@@ -3,6 +3,15 @@ import type { NextRequest } from 'next/server';
 
 // Export the middleware function
 export function middleware(request: NextRequest) {
+  // Skip middleware for static files and favicon
+  if (
+    request.nextUrl.pathname.startsWith('/_next') ||
+    request.nextUrl.pathname.startsWith('/static') ||
+    request.nextUrl.pathname === '/favicon.ico'
+  ) {
+    return NextResponse.next();
+  }
+
   // Get the origin from the request headers
   const origin = request.headers.get('origin') || '*';
   
@@ -33,6 +42,7 @@ export function middleware(request: NextRequest) {
 // Configure which paths should be handled by the middleware
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    // Skip static files
+    '/((?!_next/static|_next/image|favicon.ico|static).*)',
   ],
 }; 

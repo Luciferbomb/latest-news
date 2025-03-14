@@ -6,9 +6,14 @@ npm install
 # Build Next.js app
 npm run build
 
+# Create necessary directories
+mkdir -p .next/standalone/.next/static
+mkdir -p .next/standalone/public
+
 # Copy necessary files to the standalone directory
-cp -r .next/static .next/standalone/.next/
-cp -r public .next/standalone/
+cp -r .next/static/* .next/standalone/.next/static/
+cp -r public/* .next/standalone/public/
+cp -r .next/standalone/.next/static/* .next/standalone/public/_next/static/
 
 # Copy package.json for runtime dependencies
 cp package.json .next/standalone/
@@ -47,6 +52,12 @@ cat > .next/standalone/netlify.toml << EOL
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Content-Security-Policy = "default-src 'self' newshubai.tech *.newshubai.tech; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
+
+# Handle static files
+[[redirects]]
+  from = "/_next/static/*"
+  to = "/public/_next/static/:splat"
+  status = 200
 
 # Handle API routes
 [[redirects]]

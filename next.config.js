@@ -16,8 +16,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Configure output for Netlify
+  // Configure for Netlify deployment
   output: 'standalone',
+  // Configure static file serving
+  assetPrefix: process.env.NODE_ENV === 'production' ? '/_next' : '',
   // Configure images
   images: {
     unoptimized: true,
@@ -33,6 +35,28 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '2mb',
     },
+  },
+  // Configure headers
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: '*',
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PUT, DELETE, OPTIONS',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization, X-Requested-With',
+          },
+        ],
+      },
+    ];
   },
 };
 

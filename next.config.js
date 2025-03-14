@@ -28,7 +28,7 @@ const nextConfig = {
       },
     ],
   },
-  // Configure middleware
+  // Configure experimental features
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',

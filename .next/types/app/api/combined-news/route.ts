@@ -1,4 +1,4 @@
-// File: /Users/ashutoshranjan/test/src/app/api/combined-news/route.ts
+// File: /Users/ashutoshranjan/test/latest-news/src/app/api/combined-news/route.ts
 import * as entry from '../../../../../src/app/api/combined-news/route.js'
 import type { NextRequest } from 'next/server.js'
 

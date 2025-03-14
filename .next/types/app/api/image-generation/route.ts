@@ -1,4 +1,4 @@
-// File: /Users/ashutoshranjan/test/src/app/api/image-generation/route.ts
+// File: /Users/ashutoshranjan/test/latest-news/src/app/api/image-generation/route.ts
 import * as entry from '../../../../../src/app/api/image-generation/route.js'
 import type { NextRequest } from 'next/server.js'
 

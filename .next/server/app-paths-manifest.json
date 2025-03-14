@@ -1,9 +1,24 @@
 {
-  "/api/voice-assistant/route": "app/api/voice-assistant/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/blog/route": "app/api/blog/route.js",
   "/api/combined-news/route": "app/api/combined-news/route.js",
-  "/blog/page": "app/blog/page.js",
-  "/page": "app/page.js",
+  "/api/image-generation/route": "app/api/image-generation/route.js",
+  "/api/news-update/route": "app/api/news-update/route.js",
+  "/api/rss/route": "app/api/rss/route.js",
+  "/api/newscatcher/route": "app/api/newscatcher/route.js",
+  "/api/serpapi/route": "app/api/serpapi/route.js",
+  "/api/text-analysis/route": "app/api/text-analysis/route.js",
+  "/api/voice-assistant/route": "app/api/voice-assistant/route.js",
+  "/api/voice-news/route": "app/api/voice-news/route.js",
+  "/api/youtube/route": "app/api/youtube/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/sitemap.xml/route": "app/sitemap.xml/route.js",
+  "/robots.txt/route": "app/robots.txt/route.js",
+  "/blog/[slug]/page": "app/blog/[slug]/page.js",
+  "/categories/page": "app/categories/page.js",
   "/search/page": "app/search/page.js",
   "/about/page": "app/about/page.js",
-  "/categories/page": "app/categories/page.js"
+  "/job-impact/page": "app/job-impact/page.js",
+  "/blog/page": "app/blog/page.js",
+  "/page": "app/page.js"
 }

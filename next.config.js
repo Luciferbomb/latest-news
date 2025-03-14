@@ -8,15 +8,6 @@ const withPWA = require('next-pwa')({
 
 const nextConfig = {
   reactStrictMode: true,
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
-    ],
-    unoptimized: true,
-  },
   // Disable ESLint during builds
   eslint: {
     ignoreDuringBuilds: true,
@@ -25,8 +16,24 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Enable standalone output mode for Netlify deployment
+  // Configure output for Netlify
   output: 'standalone',
+  // Configure images
+  images: {
+    unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
+  },
+  // Configure middleware
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '2mb',
+    },
+  },
 };
 
 module.exports = withPWA(nextConfig);

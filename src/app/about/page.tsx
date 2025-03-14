@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "Learn more about AI News Hub, your source for the latest AI tools and technologies.",
 };
 
-export default function AboutPage() {
+export default async function AboutPage() {
   return (
     <main className="min-h-screen pt-24 pb-12 bg-gradient-to-b from-[#030303] to-[#050505]">
       <div className="container mx-auto px-4 md:px-6">

@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { fetchBlogPosts } from '@/lib/jsonbin';
 import { BlogPostCard } from '@/components/ui/blog-post-card';
 
+export const revalidate = 3600; // Revalidate every hour
+
 export const metadata: Metadata = {
   title: 'AI Tech Blog | Latest Insights & News',
   description: 'Deep dives and analyses on the latest AI trends, tools, and technological advancements',

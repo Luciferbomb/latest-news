@@ -28,7 +28,7 @@ export async function fetchBlogPosts(): Promise<BlogPost[]> {
         'X-Access-Key': JSONBIN_ACCESS_KEY,
         'X-Bin-Meta': 'false' // Ensure we don't get metadata that might limit the response
       },
-      cache: 'no-store' // Ensure we always get fresh data
+      next: { revalidate: 3600 } // Revalidate every hour
     });
 
     if (!response.ok) {
@@ -42,7 +42,7 @@ export async function fetchBlogPosts(): Promise<BlogPost[]> {
           'X-Master-Key': JSONBIN_API_KEY,
           'X-Bin-Meta': 'false'
         },
-        cache: 'no-store' // Ensure we always get fresh data
+        next: { revalidate: 3600 } // Revalidate every hour
       });
 
       if (!fallbackResponse.ok) {

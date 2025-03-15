@@ -1,11 +1,4 @@
 /** @type {import('next').NextConfig} */
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
-  register: true,
-  skipWaiting: true,
-});
-
 const nextConfig = {
   reactStrictMode: true,
   // Disable ESLint during builds
@@ -18,9 +11,6 @@ const nextConfig = {
   },
   // Configure for Netlify deployment
   output: 'standalone',
-  distDir: '.next',
-  // Configure static file serving
-  assetPrefix: process.env.NODE_ENV === 'production' ? '/_next' : '',
   // Configure images
   images: {
     unoptimized: true,
@@ -30,12 +20,6 @@ const nextConfig = {
         hostname: '**',
       },
     ],
-  },
-  // Configure experimental features
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '2mb',
-    },
   },
   // Configure headers
   async headers() {
@@ -53,7 +37,7 @@ const nextConfig = {
           },
           {
             key: 'Access-Control-Allow-Headers',
-            value: 'Content-Type, Authorization, X-Requested-With',
+            value: 'Content-Type, Authorization',
           },
         ],
       },
@@ -61,4 +45,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = nextConfig;

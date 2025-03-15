@@ -42,17 +42,9 @@
   from = "/api/*"
   to = "/.netlify/functions/nextjs-server/api/:splat"
   status = 200
-  force = true
 
-# Handle Next.js pages
-[[redirects]]
-  from = "/_next/*"
-  to = "/_next/:splat"
-  status = 200
-
-# Handle root and all other routes
+# Handle all other routes
 [[redirects]]
   from = "/*"
   to = "/.netlify/functions/nextjs-server"
   status = 200
-  force = true

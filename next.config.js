@@ -11,16 +11,13 @@ const nextConfig = {
   },
   // Configure for Netlify deployment
   output: 'standalone',
-  // Configure images
+  distDir: '.next',
   images: {
     unoptimized: true,
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
-    ],
+    domains: ['images.unsplash.com', 'images.pexels.com'],
   },
+  // Disable trailing slashes
+  trailingSlash: false,
   // Configure headers
   async headers() {
     return [

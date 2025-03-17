@@ -10,13 +10,13 @@ npm run build
 mkdir -p .next/standalone/.next/static
 mkdir -p .next/standalone/public
 
-# Copy necessary files to the standalone directory
+# Copy necessary files
 cp -r .next/static/* .next/standalone/.next/static/
 cp -r public/* .next/standalone/public/
-cp -r .next/standalone/.next/static/* .next/standalone/public/_next/static/
-
-# Copy package.json for runtime dependencies
 cp package.json .next/standalone/
+
+# Copy static files to public directory
+cp -r .next/standalone/.next/static/* .next/standalone/public/_next/static/
 
 # Create netlify.toml in the standalone directory
 cat > .next/standalone/netlify.toml << EOL

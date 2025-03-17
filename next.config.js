@@ -12,10 +12,18 @@ const nextConfig = {
   // Configure for Netlify deployment
   output: 'standalone',
   distDir: '.next',
+  // Configure images
   images: {
     unoptimized: true,
-    domains: ['images.unsplash.com', 'images.pexels.com'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
   },
+  // Configure static file serving
+  assetPrefix: process.env.NODE_ENV === 'production' ? '/_next' : '',
   // Disable trailing slashes
   trailingSlash: false,
   // Configure headers
